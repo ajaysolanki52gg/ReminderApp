@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Reminders</string>
+    <string name="notification_channel_reminders">Reminders</string>
+    <string name="notification_channel_alarms">Alarms</string>
+    <string name="action_complete">Complete</string>
+    <string name="action_snooze">Snooze</string>
+    <string name="action_dismiss">Dismiss</string>
+</resources>
