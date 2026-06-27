@@ -31,11 +31,26 @@ class ReminderNotificationWorker @AssistedInject constructor(
 
         // Mark missed if not completed, reschedule if recurring
         val reminder = repository.getReminderById(reminderId)
-        reminder?.let {
-            if (it.status == com.reminderapp.domain.model.ReminderStatus.ACTIVE) {
+        reminder?.let { r ->
+            if (r.status == com.reminderapp.domain.model.ReminderStatus.ACTIVE) {
                 repository.updateStatus(reminderId, ReminderStatus.MISSED)
             }
-            scheduler.rescheduleRecurring(it)
+            
+            // Handle recurrence
+            if (r.recurrenceType != com.reminderapp.domain.model.RecurrenceType.NONE) {
+                val nextDate = scheduler.nextOccurrence(r)
+                if (nextDate != null) {
+                    val nextReminder = r.copy(
+                        id = 0,
+                        reminderDateTime = nextDate,
+                        status = ReminderStatus.ACTIVE,
+                        createdAt = LocalDateTime.now(),
+                        updatedAt = LocalDateTime.now()
+                    )
+                    val newId = repository.insertReminder(nextReminder)
+                    scheduler.schedule(nextReminder.copy(id = newId))
+                }
+            }
         }
 
         return Result.success()

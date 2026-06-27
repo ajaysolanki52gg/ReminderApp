@@ -3,7 +3,7 @@ package com.reminderapp.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,11 +21,14 @@ import androidx.compose.ui.unit.dp
 import com.reminderapp.domain.model.*
 import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ReminderCard(
     reminder: Reminder,
     onTap: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
+    isSelected: Boolean = false,
+    isSelectionMode: Boolean = false,
     onMarkComplete: (() -> Unit)?,
     onDelete: () -> Unit,
     onEdit: (() -> Unit)?
@@ -38,6 +41,7 @@ fun ReminderCard(
     val isMissed = reminder.status == ReminderStatus.MISSED
 
     val containerColor = when {
+        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
         isCompleted -> Color(0xFFF3F8F3) // Subtle green background
         isMissed -> Color(0xFFFFF8EC) // Subtle amber background
         else -> Color.White
@@ -53,10 +57,15 @@ fun ReminderCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .clickable(onClick = onTap),
+            .clip(RoundedCornerShape(12.dp))
+            .combinedClickable(
+                onClick = onTap,
+                onLongClick = onLongPress
+            ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isCompleted || isMissed) 0.dp else 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isCompleted || isMissed || isSelected) 0.dp else 2.dp),
+        border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     ) {
         Row(
             modifier = Modifier
@@ -69,7 +78,7 @@ fun ReminderCard(
                 modifier = Modifier
                     .fillMaxHeight()
                     .width(4.dp)
-                    .background(accentColor)
+                    .background(if (isSelected) MaterialTheme.colorScheme.primary else accentColor)
             )
 
             Row(
@@ -78,15 +87,20 @@ fun ReminderCard(
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Status indicator / complete button
-                if (onMarkComplete != null && !isCompleted) {
+                // Selection / Status indicator
+                if (isSelectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onTap() },
+                        modifier = Modifier.size(32.dp)
+                    )
+                } else if (onMarkComplete != null && !isCompleted) {
                     IconButton(
                         onClick = onMarkComplete,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            imageVector = if (isMissed) Icons.Outlined.RadioButtonUnchecked
-                            else Icons.Outlined.RadioButtonUnchecked,
+                            imageVector = Icons.Outlined.RadioButtonUnchecked,
                             contentDescription = "Mark complete",
                             tint = accentColor
                         )

@@ -37,6 +37,9 @@ class ReminderDetailViewModel @Inject constructor(
     private val _deleted = MutableStateFlow(false)
     val deleted: StateFlow<Boolean> = _deleted.asStateFlow()
 
+    private val _completed = MutableStateFlow(false)
+    val completed: StateFlow<Boolean> = _completed.asStateFlow()
+
     fun loadReminder(id: Long) {
         repository.getReminderByIdFlow(id)
             .onEach { _reminder.value = it }
@@ -46,9 +49,29 @@ class ReminderDetailViewModel @Inject constructor(
     fun markComplete() {
         val r = _reminder.value ?: return
         viewModelScope.launch {
-            repository.updateStatus(r.id, ReminderStatus.COMPLETED)
-            scheduler.cancel(r.id)
-            scheduler.rescheduleRecurring(r)
+            if (r.recurrenceType != RecurrenceType.NONE) {
+                if (r.status == ReminderStatus.MISSED) {
+                    // Just mark as completed, don't reschedule (chain already moved)
+                    repository.updateStatus(r.id, ReminderStatus.COMPLETED)
+                } else {
+                    // Update in place to next occurrence
+                    val nextDate = scheduler.nextOccurrence(r)
+                    if (nextDate != null) {
+                        val updated = r.copy(
+                            reminderDateTime = nextDate,
+                            status = ReminderStatus.ACTIVE,
+                            updatedAt = java.time.LocalDateTime.now()
+                        )
+                        repository.updateReminder(updated)
+                        scheduler.schedule(updated)
+                    }
+                }
+            } else {
+                // One-time: Move to Completed
+                repository.updateStatus(r.id, ReminderStatus.COMPLETED)
+                scheduler.cancel(r.id)
+            }
+            _completed.value = true
         }
     }
 
@@ -74,10 +97,12 @@ fun ReminderDetailScreen(
 ) {
     val reminder by viewModel.reminder.collectAsStateWithLifecycle()
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
+    val completed by viewModel.completed.collectAsStateWithLifecycle()
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(reminderId) { viewModel.loadReminder(reminderId) }
     LaunchedEffect(deleted) { if (deleted) onNavigateBack() }
+    LaunchedEffect(completed) { if (completed) onNavigateBack() }
 
     val dateFormatter = DateTimeFormatter.ofPattern("EEEE, MMMM dd, yyyy")
     val timeFormatter = DateTimeFormatter.ofPattern("hh:mm a")
@@ -169,6 +194,7 @@ fun ReminderDetailScreen(
                         RecurrenceType.NONE -> "One-time"
                         RecurrenceType.DAILY -> "Every day"
                         RecurrenceType.WEEKLY -> "Every week (${r.recurrenceValue.lowercase().replaceFirstChar { it.uppercase() }})"
+                        RecurrenceType.BIWEEKLY -> "Every 2 weeks"
                         RecurrenceType.MONTHLY -> "Every month on ${r.recurrenceValue}${ordinalSuffix(r.recurrenceValue.toIntOrNull() ?: 1)}"
                         RecurrenceType.YEARLY -> "Every year on ${r.recurrenceValue.replace("_", " ")}"
                     }

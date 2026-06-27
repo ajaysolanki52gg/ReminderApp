@@ -31,7 +31,30 @@ class NotificationActionReceiver : BroadcastReceiver() {
         when (intent.action) {
             NotificationHelper.ACTION_COMPLETE -> {
                 CoroutineScope(Dispatchers.IO).launch {
-                    repository.updateStatus(reminderId, ReminderStatus.COMPLETED)
+                    val reminder = repository.getReminderById(reminderId)
+                    reminder?.let { r ->
+                        if (r.recurrenceType != com.reminderapp.domain.model.RecurrenceType.NONE) {
+                            if (r.status == ReminderStatus.MISSED) {
+                                repository.updateStatus(reminderId, ReminderStatus.COMPLETED)
+                            } else {
+                                // Recurring: Update in place
+                                val nextDate = scheduler.nextOccurrence(r)
+                                if (nextDate != null) {
+                                    val updated = r.copy(
+                                        reminderDateTime = nextDate,
+                                        status = ReminderStatus.ACTIVE,
+                                        updatedAt = java.time.LocalDateTime.now()
+                                    )
+                                    repository.updateReminder(updated)
+                                    scheduler.schedule(updated)
+                                }
+                            }
+                        } else {
+                            // One-time: Mark as COMPLETED
+                            repository.updateStatus(reminderId, ReminderStatus.COMPLETED)
+                            scheduler.cancel(reminderId)
+                        }
+                    }
                 }
                 notificationHelper.cancelNotification(reminderId)
             }

@@ -88,6 +88,7 @@ class AddReminderViewModel @Inject constructor(
             ReminderType.ONE_TIME -> RecurrenceType.NONE
             ReminderType.DAILY -> RecurrenceType.DAILY
             ReminderType.WEEKLY -> RecurrenceType.WEEKLY
+            ReminderType.BIWEEKLY -> RecurrenceType.BIWEEKLY
             ReminderType.MONTHLY -> RecurrenceType.MONTHLY
             ReminderType.YEARLY -> RecurrenceType.YEARLY
         }
@@ -129,6 +130,11 @@ class AddReminderViewModel @Inject constructor(
     fun startVoiceInput() = speechManager.startListening()
     fun stopVoiceInput() = speechManager.stopListening()
     fun resetSpeechState() = speechManager.resetState()
+
+    fun restartVoiceInput() {
+        speechManager.stopListening()
+        speechManager.startListening()
+    }
 
     // ─── Save ─────────────────────────────────────────────────────────────────
 

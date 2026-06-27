@@ -102,11 +102,12 @@ class ReminderScheduler @Inject constructor(
         )
     }
 
-    private fun nextOccurrence(reminder: Reminder): LocalDateTime? {
+    fun nextOccurrence(reminder: Reminder): LocalDateTime? {
         val base = reminder.reminderDateTime
         return when (reminder.recurrenceType) {
             RecurrenceType.DAILY -> base.plusDays(1)
             RecurrenceType.WEEKLY -> base.plusWeeks(1)
+            RecurrenceType.BIWEEKLY -> base.plusWeeks(2)
             RecurrenceType.MONTHLY -> base.plusMonths(1)
             RecurrenceType.YEARLY -> base.plusYears(1)
             RecurrenceType.NONE -> null

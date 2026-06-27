@@ -24,6 +24,7 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun AddReminderScreen(
     reminderId: Long? = null,
+    initialText: String? = null,
     onNavigateBack: () -> Unit,
     viewModel: AddReminderViewModel = hiltViewModel()
 ) {
@@ -31,8 +32,13 @@ fun AddReminderScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
 
-    LaunchedEffect(reminderId) {
-        reminderId?.let { viewModel.loadReminder(it) }
+    LaunchedEffect(reminderId, initialText) {
+        if (reminderId != null) {
+            viewModel.loadReminder(reminderId)
+        } else if (initialText != null) {
+            val result = viewModel.parseInput(initialText)
+            viewModel.prefillFromParsed(viewModel.buildReminderFromParse(result))
+        }
     }
 
     LaunchedEffect(uiState.saveSuccess) {
@@ -290,6 +296,7 @@ private fun ReminderTypeSelector(
         ReminderType.ONE_TIME to "Once",
         ReminderType.DAILY to "Daily",
         ReminderType.WEEKLY to "Weekly",
+        ReminderType.BIWEEKLY to "Bi-weekly",
         ReminderType.MONTHLY to "Monthly",
         ReminderType.YEARLY to "Yearly"
     )

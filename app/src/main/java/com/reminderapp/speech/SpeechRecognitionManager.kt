@@ -31,6 +31,8 @@ class SpeechRecognitionManager @Inject constructor(
     val state: StateFlow<SpeechState> = _state
 
     fun startListening() {
+        if (_state.value is SpeechState.Listening) return // Already listening
+
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             _state.value = SpeechState.Error("Speech recognition not available on this device")
             return
@@ -65,10 +67,11 @@ class SpeechRecognitionManager @Inject constructor(
                         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "No speech input"
                         else -> "Unknown error"
                     }
-                    if (error != SpeechRecognizer.ERROR_NO_MATCH) {
-                        _state.value = SpeechState.Error(message)
+                    // Silent retry for timeouts/no match to simulate "Always Listening" until manual stop
+                    if (error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT || error == SpeechRecognizer.ERROR_NO_MATCH) {
+                        _state.value = SpeechState.Listening // Reset to listening to allow restart
                     } else {
-                        _state.value = SpeechState.Idle
+                        _state.value = SpeechState.Error(message)
                     }
                 }
 

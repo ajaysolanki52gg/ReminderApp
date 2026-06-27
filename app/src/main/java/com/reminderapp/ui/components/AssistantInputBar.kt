@@ -1,8 +1,5 @@
 package com.reminderapp.ui.components
 
-import android.Manifest
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,43 +29,19 @@ import java.time.format.DateTimeFormatter
 fun AssistantInputBar(
     onDismiss: () -> Unit,
     onNavigateToAddReminder: () -> Unit,
-    initialListening: Boolean = false,
+    initialText: String = "",
+    onVoiceRequest: () -> Unit,
     viewModel: AddReminderViewModel = hiltViewModel()
 ) {
-    var inputText by remember { mutableStateOf("") }
+    var inputText by remember(initialText) { mutableStateOf(initialText) }
     var parsedReminder by remember { mutableStateOf<Reminder?>(null) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    val micPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) viewModel.startVoiceInput()
-    }
-
-    LaunchedEffect(initialListening) {
-        if (initialListening) {
-            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-        }
-    }
-
-    val speechState by viewModel.speechState.collectAsState()
-
-    // Handle voice result
-    LaunchedEffect(speechState) {
-        when (val state = speechState) {
-            is com.reminderapp.speech.SpeechState.PartialResult -> {
-                inputText = state.text
-            }
-            is com.reminderapp.speech.SpeechState.Result -> {
-                inputText = state.text
-            }
-            else -> {}
-        }
-    }
-
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        if (initialText.isEmpty()) {
+            focusRequester.requestFocus()
+        }
     }
 
     Surface(
@@ -153,17 +126,11 @@ fun AssistantInputBar(
                             }
                         }),
                         trailingIcon = {
-                            val isListening = speechState is com.reminderapp.speech.SpeechState.Listening
-                            IconButton(
-                                onClick = {
-                                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                }
-                            ) {
+                            IconButton(onClick = onVoiceRequest) {
                                 Icon(
-                                    imageVector = if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
+                                    imageVector = Icons.Default.Mic,
                                     contentDescription = "Voice input",
-                                    tint = if (isListening) MaterialTheme.colorScheme.error
-                                    else MaterialTheme.colorScheme.primary
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
@@ -253,6 +220,7 @@ fun ConfirmationSheet(
                     RecurrenceType.NONE -> "One-time"
                     RecurrenceType.DAILY -> "Every day"
                     RecurrenceType.WEEKLY -> "Every week"
+                    RecurrenceType.BIWEEKLY -> "Every 2 weeks"
                     RecurrenceType.MONTHLY -> "Every month"
                     RecurrenceType.YEARLY -> "Every year"
                 }

@@ -118,8 +118,12 @@ class NaturalLanguageParser @Inject constructor() {
         val time = extractTime(normalized)
         val now = LocalDateTime.now()
         
-        val finalTime = time ?: LocalTime.of(8, 0)
-        val finalDate = date ?: if (time != null && LocalDateTime.of(LocalDate.now(), time).isBefore(now)) {
+        // If user specified time, use it. Otherwise, use current time + 1 hour as default.
+        val finalTime = time ?: LocalTime.now().plusHours(1).withSecond(0).withNano(0)
+        
+        // If user specified date, use it. 
+        // If not, and the time is already past today, assume they mean tomorrow.
+        val finalDate = date ?: if (LocalDateTime.of(LocalDate.now(), finalTime).isBefore(now)) {
             LocalDate.now().plusDays(1)
         } else {
             LocalDate.now()
@@ -188,30 +192,30 @@ class NaturalLanguageParser @Inject constructor() {
     // ─── Time Extraction ──────────────────────────────────────────────────────
 
     private fun extractTime(normalized: String): LocalTime? {
-        // noon / midnight
-        if (normalized.contains("noon")) return LocalTime.of(12, 0)
-        if (normalized.contains("midnight")) return LocalTime.of(0, 0)
-
         // HH:MM am/pm (flexible spaces and dots)
-        val fullTimeRegex = Regex("""(\d{1,2}):(\d{2})\s*([ap]\.?m\.?)""", RegexOption.IGNORE_CASE)
+        val fullTimeRegex = Regex("""(\d{1,2}):(\d{2})\s*([ap]\.?\s*m\.?)""", RegexOption.IGNORE_CASE)
         fullTimeRegex.find(normalized)?.let { match ->
             var hour = match.groupValues[1].toInt()
             val minute = match.groupValues[2].toInt()
-            val ampm = match.groupValues[3].lowercase().replace(".", "")
+            val ampm = match.groupValues[3].lowercase().replace(".", "").replace(" ", "")
             if (ampm == "pm" && hour != 12) hour += 12
             if (ampm == "am" && hour == 12) hour = 0
             return LocalTime.of(hour.coerceIn(0, 23), minute.coerceIn(0, 59))
         }
 
         // H am/pm (flexible spaces and dots)
-        val shortTimeRegex = Regex("""(\d{1,2})\s*([ap]\.?m\.?)""", RegexOption.IGNORE_CASE)
+        val shortTimeRegex = Regex("""(\d{1,2})\s*([ap]\.?\s*m\.?)""", RegexOption.IGNORE_CASE)
         shortTimeRegex.find(normalized)?.let { match ->
             var hour = match.groupValues[1].toInt()
-            val ampm = match.groupValues[2].lowercase().replace(".", "")
+            val ampm = match.groupValues[2].lowercase().replace(".", "").replace(" ", "")
             if (ampm == "pm" && hour != 12) hour += 12
             if (ampm == "am" && hour == 12) hour = 0
             return LocalTime.of(hour.coerceIn(0, 23), 0)
         }
+
+        // noon / midnight
+        if (normalized.contains("noon")) return LocalTime.of(12, 0)
+        if (normalized.contains("midnight")) return LocalTime.of(0, 0)
 
         return null
     }

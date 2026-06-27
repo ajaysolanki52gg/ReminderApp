@@ -20,38 +20,69 @@ import com.reminderapp.domain.model.Reminder
 import com.reminderapp.ui.components.AssistantInputBar
 import com.reminderapp.ui.components.ReminderCard
 import com.reminderapp.ui.components.SectionHeader
+import com.reminderapp.ui.components.VoiceAssistantOverlay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onNavigateToAddReminder: () -> Unit,
+    onNavigateToAddReminderWithText: (String) -> Unit,
     onNavigateToDetail: (Long) -> Unit,
     onNavigateToSettings: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showAssistantBar by remember { mutableStateOf(false) }
-    var startListeningTrigger by remember { mutableStateOf(0) }
+    var showVoiceOverlay by remember { mutableStateOf(false) }
+    var initialTextForAssistant by remember { mutableStateOf("") }
+    
+    var seeAllUpcoming by remember { mutableStateOf(false) }
+    var seeAllCompleted by remember { mutableStateOf(false) }
+    var seeAllMissed by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Reminders",
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.primary
+            if (uiState.isSelectionMode) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "${uiState.selectedIds.size} Selected",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = viewModel::clearSelection) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear Selection")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = viewModel::deleteSelected) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
-                },
-                actions = {
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
                 )
-            )
+            } else {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "Reminders",
+                            style = MaterialTheme.typography.headlineLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    },
+                    actions = {
+                        IconButton(onClick = onNavigateToSettings) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                )
+            }
         },
         floatingActionButton = {
             // Hide FABs when Assistant is open to avoid congestion
@@ -68,8 +99,7 @@ fun HomeScreen(
                     // 1. Mic FAB (Speak First) - Top of Triangle
                     FloatingActionButton(
                         onClick = {
-                            showAssistantBar = true
-                            startListeningTrigger++
+                            showVoiceOverlay = true
                         },
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = Color.White,
@@ -85,7 +115,10 @@ fun HomeScreen(
                     ) {
                         // 2. Assistant / Bot FAB
                         FloatingActionButton(
-                            onClick = { showAssistantBar = true },
+                            onClick = { 
+                                initialTextForAssistant = ""
+                                showAssistantBar = true 
+                            },
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                             shape = RoundedCornerShape(16.dp),
@@ -145,17 +178,47 @@ fun HomeScreen(
                             )
                         }
                     } else {
+                        val upcomingToShow = if (seeAllUpcoming) uiState.upcomingReminders else uiState.upcomingReminders.take(5)
                         items(
-                            items = uiState.upcomingReminders,
+                            items = upcomingToShow,
                             key = { it.id }
                         ) { reminder ->
                             ReminderCard(
                                 reminder = reminder,
-                                onTap = { onNavigateToDetail(reminder.id) },
+                                onTap = { 
+                                    if (uiState.isSelectionMode) {
+                                        viewModel.toggleSelection(reminder.id)
+                                    } else {
+                                        onNavigateToDetail(reminder.id)
+                                    }
+                                },
+                                onLongPress = { viewModel.toggleSelection(reminder.id) },
+                                isSelected = uiState.selectedIds.contains(reminder.id),
+                                isSelectionMode = uiState.isSelectionMode,
                                 onMarkComplete = { viewModel.markComplete(reminder.id) },
                                 onDelete = { viewModel.deleteReminder(reminder.id) },
                                 onEdit = { onNavigateToAddReminder() }
                             )
+                        }
+                        
+                        if (uiState.upcomingReminders.size > 5 && !seeAllUpcoming) {
+                            item {
+                                TextButton(
+                                    onClick = { seeAllUpcoming = true },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("See All Upcoming (${uiState.upcomingReminders.size})")
+                                }
+                            }
+                        } else if (seeAllUpcoming) {
+                            item {
+                                TextButton(
+                                    onClick = { seeAllUpcoming = false },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Show Less")
+                                }
+                            }
                         }
                     }
 
@@ -180,17 +243,47 @@ fun HomeScreen(
                                 )
                             }
                         } else {
+                            val completedToShow = if (seeAllCompleted) uiState.completedReminders else uiState.completedReminders.take(5)
                             items(
-                                items = uiState.completedReminders.take(10),
+                                items = completedToShow,
                                 key = { "completed_${it.id}" }
                             ) { reminder ->
                                 ReminderCard(
                                     reminder = reminder,
-                                    onTap = { onNavigateToDetail(reminder.id) },
+                                    onTap = { 
+                                        if (uiState.isSelectionMode) {
+                                            viewModel.toggleSelection(reminder.id)
+                                        } else {
+                                            onNavigateToDetail(reminder.id)
+                                        }
+                                    },
+                                    onLongPress = { viewModel.toggleSelection(reminder.id) },
+                                    isSelected = uiState.selectedIds.contains(reminder.id),
+                                    isSelectionMode = uiState.isSelectionMode,
                                     onMarkComplete = null,
                                     onDelete = { viewModel.deleteReminder(reminder.id) },
                                     onEdit = null
                                 )
+                            }
+
+                            if (uiState.completedReminders.size > 5 && !seeAllCompleted) {
+                                item {
+                                    TextButton(
+                                        onClick = { seeAllCompleted = true },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("See All Completed (${uiState.completedCount})")
+                                    }
+                                }
+                            } else if (seeAllCompleted) {
+                                item {
+                                    TextButton(
+                                        onClick = { seeAllCompleted = false },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Show Less")
+                                    }
+                                }
                             }
                         }
                     }
@@ -216,22 +309,45 @@ fun HomeScreen(
                                 )
                             }
                         } else {
+                            val missedToShow = if (seeAllMissed) uiState.missedReminders else uiState.missedReminders.take(5)
                             items(
-                                items = uiState.missedReminders.take(10),
+                                items = missedToShow,
                                 key = { "missed_${it.id}" }
                             ) { reminder ->
                                 ReminderCard(
                                     reminder = reminder,
-                                    onTap = { onNavigateToDetail(reminder.id) },
+                                    onTap = { 
+                                        if (uiState.isSelectionMode) {
+                                            viewModel.toggleSelection(reminder.id)
+                                        } else {
+                                            onNavigateToDetail(reminder.id)
+                                        }
+                                    },
+                                    onLongPress = { viewModel.toggleSelection(reminder.id) },
+                                    isSelected = uiState.selectedIds.contains(reminder.id),
+                                    isSelectionMode = uiState.isSelectionMode,
                                     onMarkComplete = { viewModel.markComplete(reminder.id) },
                                     onDelete = { viewModel.deleteReminder(reminder.id) },
                                     onEdit = { onNavigateToAddReminder() }
                                 )
                             }
-                            if (uiState.missedCount > 10) {
+
+                            if (uiState.missedReminders.size > 5 && !seeAllMissed) {
                                 item {
-                                    TextButton(onClick = { /* See all */ }) {
-                                        Text("See All (${uiState.missedCount})")
+                                    TextButton(
+                                        onClick = { seeAllMissed = true },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("See All Missed (${uiState.missedCount})")
+                                    }
+                                }
+                            } else if (seeAllMissed) {
+                                item {
+                                    TextButton(
+                                        onClick = { seeAllMissed = false },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Show Less")
                                     }
                                 }
                             }
@@ -250,10 +366,24 @@ fun HomeScreen(
                 AssistantInputBar(
                     onDismiss = { showAssistantBar = false },
                     onNavigateToAddReminder = onNavigateToAddReminder,
-                    initialListening = startListeningTrigger > 0
+                    initialText = initialTextForAssistant,
+                    onVoiceRequest = { 
+                        showAssistantBar = false
+                        showVoiceOverlay = true 
+                    }
                 )
             }
         }
+    }
+
+    if (showVoiceOverlay) {
+        VoiceAssistantOverlay(
+            onDismiss = { showVoiceOverlay = false },
+            onResult = { result ->
+                showVoiceOverlay = false
+                onNavigateToAddReminderWithText(result)
+            }
+        )
     }
 }
 
