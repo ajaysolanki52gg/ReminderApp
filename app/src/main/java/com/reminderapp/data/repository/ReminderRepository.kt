@@ -15,8 +15,10 @@ interface ReminderRepository {
     suspend fun getReminderById(id: Long): Reminder?
     fun getReminderByIdFlow(id: Long): Flow<Reminder?>
     suspend fun insertReminder(reminder: Reminder): Long
+    suspend fun insertReminders(reminders: List<Reminder>): List<Long>
     suspend fun updateReminder(reminder: Reminder)
     suspend fun deleteReminder(id: Long)
+    suspend fun deleteAllReminders()
     suspend fun updateStatus(id: Long, status: ReminderStatus)
     suspend fun getOverdueReminders(now: LocalDateTime): List<Reminder>
     suspend fun getAllActiveReminders(): List<Reminder>

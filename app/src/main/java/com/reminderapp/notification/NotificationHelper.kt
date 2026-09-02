@@ -69,7 +69,7 @@ class NotificationHelper @Inject constructor(
         notificationManager.createNotificationChannels(listOf(reminderChannel, alarmChannel))
     }
 
-    fun showReminderNotification(reminderId: Long, title: String, description: String) {
+    fun showReminderNotification(reminderId: Long, title: String, description: String, snoozeMinutes: Int = 10) {
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -88,10 +88,12 @@ class NotificationHelper @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val snoozeIntent = Intent(context, SnoozeActivity::class.java).apply {
+        val snoozeIntent = Intent(context, NotificationActionReceiver::class.java).apply {
+            action = ACTION_SNOOZE
             putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
+            putExtra(EXTRA_SNOOZE_MINUTES, snoozeMinutes)
         }
-        val snoozePendingIntent = PendingIntent.getActivity(
+        val snoozePendingIntent = PendingIntent.getBroadcast(
             context, (reminderId * 10 + 2).toInt(), snoozeIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -111,6 +113,17 @@ class NotificationHelper @Inject constructor(
     }
 
     fun showAlarmNotification(reminderId: Long, title: String, description: String) {
+        val fullScreenIntent = Intent(context, AlarmActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
+            putExtra(ReminderScheduler.EXTRA_REMINDER_TITLE, title)
+            putExtra(ReminderScheduler.EXTRA_REMINDER_DESCRIPTION, description)
+        }
+        val fullScreenPendingIntent = PendingIntent.getActivity(
+            context, reminderId.toInt(), fullScreenIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ALARMS)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("⏰ $title")
@@ -120,6 +133,11 @@ class NotificationHelper @Inject constructor(
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(false)
             .setOngoing(true)
+            // Full-screen intent is what actually gets the alarm UI on top of the lock screen /
+            // over other apps reliably; without it, delivery depended on an unreliable direct
+            // startActivity() call from a background BroadcastReceiver.
+            .setFullScreenIntent(fullScreenPendingIntent, true)
+            .setContentIntent(fullScreenPendingIntent)
             .build()
 
         notificationManager.notify(reminderId.toInt(), notification)

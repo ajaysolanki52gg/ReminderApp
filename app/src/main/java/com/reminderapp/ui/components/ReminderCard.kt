@@ -3,7 +3,8 @@ package com.reminderapp.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -14,21 +15,21 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.reminderapp.domain.model.*
+import com.reminderapp.ui.theme.MutedAmber
+import com.reminderapp.ui.theme.MutedAmberContainer
+import com.reminderapp.ui.theme.MutedAmberContainerDark
+import com.reminderapp.ui.theme.MutedAmberDark
 import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReminderCard(
     reminder: Reminder,
     onTap: () -> Unit,
-    onLongPress: (() -> Unit)? = null,
-    isSelected: Boolean = false,
-    isSelectionMode: Boolean = false,
     onMarkComplete: (() -> Unit)?,
     onDelete: () -> Unit,
     onEdit: (() -> Unit)?
@@ -40,16 +41,17 @@ fun ReminderCard(
     val isCompleted = reminder.status == ReminderStatus.COMPLETED
     val isMissed = reminder.status == ReminderStatus.MISSED
 
+    val isDark = isSystemInDarkTheme()
+
     val containerColor = when {
-        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-        isCompleted -> Color(0xFFF3F8F3) // Subtle green background
-        isMissed -> Color(0xFFFFF8EC) // Subtle amber background
-        else -> Color.White
+        isCompleted -> MaterialTheme.colorScheme.tertiaryContainer
+        isMissed -> if (isDark) MutedAmberContainerDark else MutedAmberContainer
+        else -> MaterialTheme.colorScheme.surface
     }
 
     val accentColor = when {
-        isCompleted -> Color(0xFF6B8F71)
-        isMissed -> Color(0xFFD4A017)
+        isCompleted -> MaterialTheme.colorScheme.onTertiaryContainer
+        isMissed -> if (isDark) MutedAmberDark else MutedAmber
         else -> MaterialTheme.colorScheme.primary
     }
 
@@ -57,15 +59,10 @@ fun ReminderCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .combinedClickable(
-                onClick = onTap,
-                onLongClick = onLongPress
-            ),
+            .clickable(onClick = onTap),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isCompleted || isMissed || isSelected) 0.dp else 2.dp),
-        border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isCompleted || isMissed) 0.dp else 2.dp)
     ) {
         Row(
             modifier = Modifier
@@ -78,7 +75,7 @@ fun ReminderCard(
                 modifier = Modifier
                     .fillMaxHeight()
                     .width(4.dp)
-                    .background(if (isSelected) MaterialTheme.colorScheme.primary else accentColor)
+                    .background(accentColor)
             )
 
             Row(
@@ -87,21 +84,16 @@ fun ReminderCard(
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Selection / Status indicator
-                if (isSelectionMode) {
-                    Checkbox(
-                        checked = isSelected,
-                        onCheckedChange = { onTap() },
-                        modifier = Modifier.size(32.dp)
-                    )
-                } else if (onMarkComplete != null && !isCompleted) {
+                // Status indicator / complete button
+                if (onMarkComplete != null && !isCompleted) {
                     IconButton(
                         onClick = onMarkComplete,
                         modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.RadioButtonUnchecked,
-                            contentDescription = "Mark complete",
+                            imageVector = if (isMissed) Icons.Default.PriorityHigh
+                            else Icons.Outlined.RadioButtonUnchecked,
+                            contentDescription = if (isMissed) "Missed reminder" else "Mark complete",
                             tint = accentColor
                         )
                     }

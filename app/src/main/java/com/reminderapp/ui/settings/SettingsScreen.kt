@@ -1,8 +1,13 @@
 package com.reminderapp.ui.settings
 
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -21,6 +26,8 @@ import androidx.lifecycle.viewModelScope
 import com.reminderapp.data.repository.SettingsRepository
 import com.reminderapp.domain.model.NotificationMode
 import com.reminderapp.util.BackupRestoreManager
+import com.reminderapp.util.requestAlarmReliabilityPermissionsIfNeeded
+import com.reminderapp.ui.components.MinutesInputDialog
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -97,6 +104,7 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -146,7 +154,12 @@ fun SettingsScreen(
                         NotificationMode.entries.forEach { mode ->
                             FilterChip(
                                 selected = uiState.defaultNotificationMode == mode,
-                                onClick = { viewModel.setDefaultMode(mode) },
+                                onClick = {
+                                    viewModel.setDefaultMode(mode)
+                                    if (mode == NotificationMode.ALARM) {
+                                        context.requestAlarmReliabilityPermissionsIfNeeded()
+                                    }
+                                },
                                 label = { Text(mode.name.lowercase().replaceFirstChar { it.uppercase() }) },
                                 leadingIcon = {
                                     Icon(
@@ -162,6 +175,7 @@ fun SettingsScreen(
             }
 
             // ─── Snooze Duration ───────────────────────────────────────────────
+            var showCustomSnooze by remember { mutableStateOf(false) }
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Default Snooze Duration", style = MaterialTheme.typography.titleSmall)
@@ -175,7 +189,67 @@ fun SettingsScreen(
                                 }
                             )
                         }
+                        FilterChip(
+                            selected = uiState.defaultSnoozeDuration !in snoozeOptions,
+                            onClick = { showCustomSnooze = true },
+                            label = { Text("Custom") }
+                        )
                     }
+                }
+            }
+
+            if (showCustomSnooze) {
+                MinutesInputDialog(
+                    onDismiss = { showCustomSnooze = false },
+                    onConfirm = { minutes ->
+                        showCustomSnooze = false
+                        viewModel.setDefaultSnooze(minutes)
+                    }
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // ─── Reliability ───────────────────────────────────────────────────
+            SettingsSectionTitle("Reliability")
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(8.dp)) {
+                    ListItem(
+                        headlineContent = { Text("Allow Exact Alarms") },
+                        supportingContent = { Text("Required so alarms trigger at the exact time set") },
+                        leadingContent = { Icon(Icons.Default.Alarm, contentDescription = null) },
+                        modifier = Modifier.clickable {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                try {
+                                    context.startActivity(Intent(AndroidSettings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                    ListItem(
+                        headlineContent = { Text("Disable Battery Optimization") },
+                        supportingContent = { Text("Prevents the system from delaying or killing alarms in the background") },
+                        leadingContent = { Icon(Icons.Default.BatteryChargingFull, contentDescription = null) },
+                        modifier = Modifier.clickable {
+                            val powerManager = context.getSystemService(PowerManager::class.java)
+                            if (powerManager?.isIgnoringBatteryOptimizations(context.packageName) != true) {
+                                try {
+                                    context.startActivity(
+                                        Intent(
+                                            AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                            Uri.parse("package:${context.packageName}")
+                                        )
+                                    )
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                            }
+                        }
+                    )
                 }
             }
 
@@ -231,8 +305,3 @@ private fun SettingsSectionTitle(title: String) {
         modifier = Modifier.padding(vertical = 4.dp, horizontal = 4.dp)
     )
 }
-
-// Extension to make Card items clickable
-private fun Modifier.clickable(onClick: () -> Unit) = this.then(
-    Modifier.padding(0.dp)
-)

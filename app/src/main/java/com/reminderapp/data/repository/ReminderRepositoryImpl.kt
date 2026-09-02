@@ -41,11 +41,17 @@ class ReminderRepositoryImpl @Inject constructor(
     override suspend fun insertReminder(reminder: Reminder): Long =
         dao.insert(reminder.toEntity())
 
+    override suspend fun insertReminders(reminders: List<Reminder>): List<Long> =
+        dao.insertAll(reminders.map { it.toEntity() })
+
     override suspend fun updateReminder(reminder: Reminder) =
         dao.update(reminder.toEntity())
 
     override suspend fun deleteReminder(id: Long) =
         dao.deleteById(id)
+
+    override suspend fun deleteAllReminders() =
+        dao.deleteAll()
 
     override suspend fun updateStatus(id: Long, status: ReminderStatus) =
         dao.updateStatus(id, status)

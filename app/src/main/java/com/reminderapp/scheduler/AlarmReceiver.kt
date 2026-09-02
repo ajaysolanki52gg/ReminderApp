@@ -21,16 +21,24 @@ class AlarmReceiver : BroadcastReceiver() {
 
         if (reminderId == -1L) return
 
-        // Launch full-screen alarm activity
-        val alarmIntent = Intent(context, AlarmActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
-            putExtra(ReminderScheduler.EXTRA_REMINDER_TITLE, title)
-            putExtra(ReminderScheduler.EXTRA_REMINDER_DESCRIPTION, description)
-        }
-        context.startActivity(alarmIntent)
-
-        // Also show notification in case screen is locked
+        // Show the alarm notification first: it carries a full-screen intent, which is the
+        // delivery path the system actually guarantees. A direct context.startActivity() call
+        // from a BroadcastReceiver is blocked by Android 10+ background-activity-launch
+        // restrictions (and can throw on newer Android versions), which is why alarms were
+        // sometimes silent when the app wasn't already in the foreground.
         notificationHelper.showAlarmNotification(reminderId, title, description)
+
+        // Best-effort direct launch, useful when the app happens to already be in the foreground.
+        try {
+            val alarmIntent = Intent(context, AlarmActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
+                putExtra(ReminderScheduler.EXTRA_REMINDER_TITLE, title)
+                putExtra(ReminderScheduler.EXTRA_REMINDER_DESCRIPTION, description)
+            }
+            context.startActivity(alarmIntent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }

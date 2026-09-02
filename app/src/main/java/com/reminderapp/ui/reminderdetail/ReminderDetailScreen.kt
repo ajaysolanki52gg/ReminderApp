@@ -1,5 +1,6 @@
 package com.reminderapp.ui.reminderdetail
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,6 +18,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reminderapp.data.repository.ReminderRepository
 import com.reminderapp.domain.model.*
 import com.reminderapp.scheduler.ReminderScheduler
+import com.reminderapp.ui.theme.MutedAmberContainer
+import com.reminderapp.ui.theme.MutedAmberContainerDark
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -37,9 +40,6 @@ class ReminderDetailViewModel @Inject constructor(
     private val _deleted = MutableStateFlow(false)
     val deleted: StateFlow<Boolean> = _deleted.asStateFlow()
 
-    private val _completed = MutableStateFlow(false)
-    val completed: StateFlow<Boolean> = _completed.asStateFlow()
-
     fun loadReminder(id: Long) {
         repository.getReminderByIdFlow(id)
             .onEach { _reminder.value = it }
@@ -49,29 +49,9 @@ class ReminderDetailViewModel @Inject constructor(
     fun markComplete() {
         val r = _reminder.value ?: return
         viewModelScope.launch {
-            if (r.recurrenceType != RecurrenceType.NONE) {
-                if (r.status == ReminderStatus.MISSED) {
-                    // Just mark as completed, don't reschedule (chain already moved)
-                    repository.updateStatus(r.id, ReminderStatus.COMPLETED)
-                } else {
-                    // Update in place to next occurrence
-                    val nextDate = scheduler.nextOccurrence(r)
-                    if (nextDate != null) {
-                        val updated = r.copy(
-                            reminderDateTime = nextDate,
-                            status = ReminderStatus.ACTIVE,
-                            updatedAt = java.time.LocalDateTime.now()
-                        )
-                        repository.updateReminder(updated)
-                        scheduler.schedule(updated)
-                    }
-                }
-            } else {
-                // One-time: Move to Completed
-                repository.updateStatus(r.id, ReminderStatus.COMPLETED)
-                scheduler.cancel(r.id)
-            }
-            _completed.value = true
+            repository.updateStatus(r.id, ReminderStatus.COMPLETED)
+            scheduler.cancel(r.id)
+            scheduler.rescheduleRecurring(r)
         }
     }
 
@@ -97,12 +77,10 @@ fun ReminderDetailScreen(
 ) {
     val reminder by viewModel.reminder.collectAsStateWithLifecycle()
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
-    val completed by viewModel.completed.collectAsStateWithLifecycle()
     var showDeleteDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(reminderId) { viewModel.loadReminder(reminderId) }
     LaunchedEffect(deleted) { if (deleted) onNavigateBack() }
-    LaunchedEffect(completed) { if (completed) onNavigateBack() }
 
     val dateFormatter = DateTimeFormatter.ofPattern("EEEE, MMMM dd, yyyy")
     val timeFormatter = DateTimeFormatter.ofPattern("hh:mm a")
@@ -154,7 +132,10 @@ fun ReminderDetailScreen(
                         containerColor = when (r.status) {
                             ReminderStatus.ACTIVE -> MaterialTheme.colorScheme.primaryContainer
                             ReminderStatus.COMPLETED -> MaterialTheme.colorScheme.tertiaryContainer
-                            ReminderStatus.MISSED -> MaterialTheme.colorScheme.errorContainer
+                            // Amber, not red: red is reserved for destructive actions (Delete) -
+                            // "missed" elsewhere in the app (ReminderCard, section headers) uses
+                            // the same amber language, so this chip now matches.
+                            ReminderStatus.MISSED -> if (isSystemInDarkTheme()) MutedAmberContainerDark else MutedAmberContainer
                         }
                     )
                 )
@@ -194,7 +175,6 @@ fun ReminderDetailScreen(
                         RecurrenceType.NONE -> "One-time"
                         RecurrenceType.DAILY -> "Every day"
                         RecurrenceType.WEEKLY -> "Every week (${r.recurrenceValue.lowercase().replaceFirstChar { it.uppercase() }})"
-                        RecurrenceType.BIWEEKLY -> "Every 2 weeks"
                         RecurrenceType.MONTHLY -> "Every month on ${r.recurrenceValue}${ordinalSuffix(r.recurrenceValue.toIntOrNull() ?: 1)}"
                         RecurrenceType.YEARLY -> "Every year on ${r.recurrenceValue.replace("_", " ")}"
                     }

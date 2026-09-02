@@ -9,6 +9,7 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.Month
 import java.time.temporal.TemporalAdjusters
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,8 +35,10 @@ class NaturalLanguageParser @Inject constructor() {
             val month = parseMonth(match.groupValues[1]) ?: return@let
             val day = match.groupValues[2].toIntOrNull() ?: return@let
             val title = extractTitle(normalized, match.value, original)
+            val extractedTime = extractTime(normalized)
+            val time = extractedTime ?: LocalTime.of(8, 0)
             val now = LocalDateTime.now()
-            var nextOccurrence = LocalDateTime.of(now.year, month, day, 8, 0)
+            var nextOccurrence = LocalDateTime.of(now.year, month, day, time.hour, time.minute)
             if (nextOccurrence.isBefore(now)) nextOccurrence = nextOccurrence.plusYears(1)
             return ReminderParseResult(
                 title = title,
@@ -43,6 +46,7 @@ class NaturalLanguageParser @Inject constructor() {
                 recurrenceType = RecurrenceType.YEARLY,
                 recurrenceValue = "${month.name}_$day",
                 reminderType = ReminderType.YEARLY,
+                confidence = timeConfidence(extractedTime),
                 rawInput = original
             )
         }
@@ -53,8 +57,10 @@ class NaturalLanguageParser @Inject constructor() {
             val day = match.groupValues[1].toIntOrNull() ?: return@let
             if (day < 1 || day > 31) return@let
             val title = extractTitle(normalized, match.value, original)
+            val extractedTime = extractTime(normalized)
+            val time = extractedTime ?: LocalTime.of(8, 0)
             val now = LocalDateTime.now()
-            var nextOccurrence = LocalDateTime.of(now.year, now.month, day, 8, 0)
+            var nextOccurrence = LocalDateTime.of(now.year, now.month, day, time.hour, time.minute)
             if (nextOccurrence.isBefore(now)) nextOccurrence = nextOccurrence.plusMonths(1)
             return ReminderParseResult(
                 title = title,
@@ -62,6 +68,7 @@ class NaturalLanguageParser @Inject constructor() {
                 recurrenceType = RecurrenceType.MONTHLY,
                 recurrenceValue = day.toString(),
                 reminderType = ReminderType.MONTHLY,
+                confidence = timeConfidence(extractedTime),
                 rawInput = original
             )
         }
@@ -76,13 +83,15 @@ class NaturalLanguageParser @Inject constructor() {
             if (nextDate == now.toLocalDate() && now.toLocalTime().isAfter(LocalTime.of(8, 0))) {
                 nextDate = nextDate.with(TemporalAdjusters.next(dayOfWeek))
             }
-            val time = extractTime(normalized) ?: LocalTime.of(8, 0)
+            val extractedTime = extractTime(normalized)
+            val time = extractedTime ?: LocalTime.of(8, 0)
             return ReminderParseResult(
                 title = title,
                 dateTime = LocalDateTime.of(nextDate, time),
                 recurrenceType = RecurrenceType.WEEKLY,
                 recurrenceValue = dayOfWeek.name,
                 reminderType = ReminderType.WEEKLY,
+                confidence = timeConfidence(extractedTime),
                 rawInput = original
             )
         }
@@ -94,7 +103,8 @@ class NaturalLanguageParser @Inject constructor() {
                 if (normalized.contains("every day")) "every day" else "daily",
                 original
             )
-            val time = extractTime(normalized) ?: LocalTime.of(8, 0)
+            val extractedTime = extractTime(normalized)
+            val time = extractedTime ?: LocalTime.of(8, 0)
             val now = LocalDateTime.now()
             var nextOccurrence = LocalDateTime.of(now.toLocalDate(), time)
             if (nextOccurrence.isBefore(now)) nextOccurrence = nextOccurrence.plusDays(1)
@@ -104,6 +114,7 @@ class NaturalLanguageParser @Inject constructor() {
                 recurrenceType = RecurrenceType.DAILY,
                 recurrenceValue = "",
                 reminderType = ReminderType.DAILY,
+                confidence = timeConfidence(extractedTime),
                 rawInput = original
             )
         }
@@ -118,12 +129,8 @@ class NaturalLanguageParser @Inject constructor() {
         val time = extractTime(normalized)
         val now = LocalDateTime.now()
         
-        // If user specified time, use it. Otherwise, use current time + 1 hour as default.
-        val finalTime = time ?: LocalTime.now().plusHours(1).withSecond(0).withNano(0)
-        
-        // If user specified date, use it. 
-        // If not, and the time is already past today, assume they mean tomorrow.
-        val finalDate = date ?: if (LocalDateTime.of(LocalDate.now(), finalTime).isBefore(now)) {
+        val finalTime = time ?: LocalTime.of(8, 0)
+        val finalDate = date ?: if (time != null && LocalDateTime.of(LocalDate.now(), time).isBefore(now)) {
             LocalDate.now().plusDays(1)
         } else {
             LocalDate.now()
@@ -134,11 +141,21 @@ class NaturalLanguageParser @Inject constructor() {
         // Strip date/time keywords and filler phrases from title
         val title = buildTitle(normalized, original)
 
+        // Both explicit -> fully confident; one defaulted -> still likely right; both defaulted
+        // (e.g. "remind me to call mom" with no date/time at all) means today-at-8am was guessed
+        // wholesale, worth flagging to the user before saving.
+        val confidence = when {
+            date != null && time != null -> 1.0f
+            date != null || time != null -> 0.8f
+            else -> 0.5f
+        }
+
         return ReminderParseResult(
             title = title,
             dateTime = dateTime,
             recurrenceType = RecurrenceType.NONE,
             reminderType = ReminderType.ONE_TIME,
+            confidence = confidence,
             rawInput = original
         )
     }
@@ -173,15 +190,16 @@ class NaturalLanguageParser @Inject constructor() {
                 if (candidate.isBefore(today)) candidate.plusYears(1) else candidate
             }
 
-            // dd/mm/yyyy or dd-mm-yyyy
+            // dd/mm/yyyy (most locales) or mm/dd/yyyy (US) - the separator alone doesn't say
+            // which order was meant, so fall back to the device locale's convention.
             Regex("""(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})""").containsMatchIn(normalized) -> {
                 val match = Regex("""(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})""").find(normalized)!!
+                val first = match.groupValues[1].toInt()
+                val second = match.groupValues[2].toInt()
+                val year = match.groupValues[3].toInt()
+                val (month, day) = if (Locale.getDefault().country == "US") first to second else second to first
                 try {
-                    LocalDate.of(
-                        match.groupValues[3].toInt(),
-                        match.groupValues[2].toInt(),
-                        match.groupValues[1].toInt()
-                    )
+                    LocalDate.of(year, month, day)
                 } catch (e: Exception) { null }
             }
 
@@ -192,96 +210,103 @@ class NaturalLanguageParser @Inject constructor() {
     // ─── Time Extraction ──────────────────────────────────────────────────────
 
     private fun extractTime(normalized: String): LocalTime? {
+        // noon / midnight
+        if (normalized.contains("noon")) return LocalTime.of(12, 0)
+        if (normalized.contains("midnight")) return LocalTime.of(0, 0)
+
         // HH:MM am/pm (flexible spaces and dots)
-        val fullTimeRegex = Regex("""(\d{1,2}):(\d{2})\s*([ap]\.?\s*m\.?)""", RegexOption.IGNORE_CASE)
+        val fullTimeRegex = Regex("""(\d{1,2}):(\d{2})\s*([ap]\.?m\.?)""", RegexOption.IGNORE_CASE)
         fullTimeRegex.find(normalized)?.let { match ->
             var hour = match.groupValues[1].toInt()
             val minute = match.groupValues[2].toInt()
-            val ampm = match.groupValues[3].lowercase().replace(".", "").replace(" ", "")
+            val ampm = match.groupValues[3].lowercase().replace(".", "")
             if (ampm == "pm" && hour != 12) hour += 12
             if (ampm == "am" && hour == 12) hour = 0
             return LocalTime.of(hour.coerceIn(0, 23), minute.coerceIn(0, 59))
         }
 
         // H am/pm (flexible spaces and dots)
-        val shortTimeRegex = Regex("""(\d{1,2})\s*([ap]\.?\s*m\.?)""", RegexOption.IGNORE_CASE)
+        val shortTimeRegex = Regex("""(\d{1,2})\s*([ap]\.?m\.?)""", RegexOption.IGNORE_CASE)
         shortTimeRegex.find(normalized)?.let { match ->
             var hour = match.groupValues[1].toInt()
-            val ampm = match.groupValues[2].lowercase().replace(".", "").replace(" ", "")
+            val ampm = match.groupValues[2].lowercase().replace(".", "")
             if (ampm == "pm" && hour != 12) hour += 12
             if (ampm == "am" && hour == 12) hour = 0
             return LocalTime.of(hour.coerceIn(0, 23), 0)
         }
-
-        // noon / midnight
-        if (normalized.contains("noon")) return LocalTime.of(12, 0)
-        if (normalized.contains("midnight")) return LocalTime.of(0, 0)
 
         return null
     }
 
     // ─── Title Extraction ─────────────────────────────────────────────────────
 
-    private fun buildTitle(normalized: String, original: String): String {
-        var result = original.trim()
+    // Trigger phrases people actually say before the real task ("add a reminder to pick up
+    // milk", "please remind me about the call", "don't forget to pay rent"). Longer/more
+    // specific phrases are listed before their shorter subsets so e.g. "remind me about" is
+    // consumed whole instead of leaving a dangling "about".
+    private val fillerPhrasePatterns = listOf(
+        Regex("""\bplease\s+remind\s+me\s+(to|about)\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bremind\s+me\s+(to|about)\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bremind\s+me\b""", RegexOption.IGNORE_CASE),
+        Regex("""\b(set|add|create)\s+(a\s+|an\s+)?reminder\s+(for|to)\b""", RegexOption.IGNORE_CASE),
+        Regex("""\b(set|add|create)\s+(a\s+|an\s+)?reminder\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bi\s+(want|need|have)\s+to\b""", RegexOption.IGNORE_CASE),
+        Regex("""\b(don't|do not|dont)\s+forget\s+(to|about)\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bmake\s+sure\s+to\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bnote\s+to\s+self\s*(that|to)?\b""", RegexOption.IGNORE_CASE)
+    )
 
-        // Filler phrases and keywords to remove (case insensitive)
-        val removePatterns = listOf(
-            Regex("""\bset a reminder for\b""", RegexOption.IGNORE_CASE),
-            Regex("""\bset a reminder\b""", RegexOption.IGNORE_CASE),
-            Regex("""\bremind me to\b""", RegexOption.IGNORE_CASE),
-            Regex("""\bremind me\b""", RegexOption.IGNORE_CASE),
-            Regex("""\bi want to\b""", RegexOption.IGNORE_CASE),
-            Regex("""\bcreate a reminder for\b""", RegexOption.IGNORE_CASE),
-            Regex("""\bat\b""", RegexOption.IGNORE_CASE),
-            Regex("""\bfor\b""", RegexOption.IGNORE_CASE),
-            Regex("""\bon\b""", RegexOption.IGNORE_CASE),
-            // Time patterns
-            Regex("""\b\d{1,2}:\d{2}\s*([ap]\.?m\.?)\b""", RegexOption.IGNORE_CASE),
-            Regex("""\b\d{1,2}\s*([ap]\.?m\.?)\b""", RegexOption.IGNORE_CASE),
-            Regex("""\bnoon\b""", RegexOption.IGNORE_CASE),
-            Regex("""\bmidnight\b""", RegexOption.IGNORE_CASE),
-            // Date patterns
-            Regex("""\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b""", RegexOption.IGNORE_CASE),
-            Regex("""\bnext week\b""", RegexOption.IGNORE_CASE),
-            Regex("""\btoday\b""", RegexOption.IGNORE_CASE),
-            Regex("""\btomorrow\b""", RegexOption.IGNORE_CASE),
-            Regex("""\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:st|nd|rd|th)?\b""", RegexOption.IGNORE_CASE),
-            Regex("""\b\d{1,2}[/\-]\d{1,2}[/\-]\d{4}\b""")
-        )
+    private val dateTimeFillerPatterns = listOf(
+        Regex("""\b\d{1,2}:\d{2}\s*([ap]\.?m\.?)\b""", RegexOption.IGNORE_CASE),
+        Regex("""\b\d{1,2}\s*([ap]\.?m\.?)\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bnoon\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bmidnight\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bnext week\b""", RegexOption.IGNORE_CASE),
+        Regex("""\btoday\b""", RegexOption.IGNORE_CASE),
+        Regex("""\btomorrow\b""", RegexOption.IGNORE_CASE),
+        Regex("""\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:st|nd|rd|th)?\b""", RegexOption.IGNORE_CASE),
+        Regex("""\b\d{1,2}[/\-]\d{1,2}[/\-]\d{4}\b""")
+    )
 
-        removePatterns.forEach { pattern ->
+    private val genericConnectorPatterns = listOf(
+        Regex("""\bat\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bfor\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bon\b""", RegexOption.IGNORE_CASE)
+    )
+
+    // Connector words that only make sense mid-phrase; once everything else is stripped, any of
+    // these left dangling at the very start/end of the title are leftovers, not part of the task
+    // (e.g. "...to remind me about my books" -> "about my books" -> "my books").
+    private val edgeFillerRegex =
+        Regex("""^(for|at|on|to|about|that|then)\s+|\s+(for|at|on|to|about|that|then)$""", RegexOption.IGNORE_CASE)
+
+    private fun cleanupTitle(text: String, fallback: String): String {
+        var result = text
+        (fillerPhrasePatterns + dateTimeFillerPatterns + genericConnectorPatterns).forEach { pattern ->
             result = pattern.replace(result, " ")
         }
-
-        // Clean up extra spaces and punctuation
         result = result.trim().replace(Regex("""\s+"""), " ")
-        
-        // Remove leading/trailing "for", "at", "on" if they were left over
-        result = result.replace(Regex("""^(for|at|on)\s+""", RegexOption.IGNORE_CASE), "")
-        result = result.replace(Regex("""\s+(for|at|on)$""", RegexOption.IGNORE_CASE), "")
 
-        return result.trim().replaceFirstChar { it.uppercase() }.ifEmpty { original.trim().replaceFirstChar { it.uppercase() } }
+        // Repeatedly strip edge connector words: removing one can expose another
+        // (e.g. "to about my books" -> "about my books" -> "my books").
+        var previous: String
+        do {
+            previous = result
+            result = edgeFillerRegex.replace(result, " ").trim()
+        } while (result != previous)
+
+        return result.replaceFirstChar { it.uppercase() }
+            .ifEmpty { fallback.trim().replaceFirstChar { it.uppercase() } }
     }
 
+    private fun buildTitle(normalized: String, original: String): String =
+        cleanupTitle(original, original)
+
     private fun extractTitle(normalized: String, patternFound: String, original: String): String {
-        // Remove the recurring pattern portion from title
-        val cleaned = normalized.replace(patternFound, "").trim()
-        // Remove any extracted time
-        val time = extractTime(normalized)
-        var title = original
-        if (time != null) {
-            val timePatterns = listOf(
-                Regex("""\\d{1,2}:\\d{2}\\s*[ap]m""", RegexOption.IGNORE_CASE),
-                Regex("""\\d{1,2}\\s*[ap]m""", RegexOption.IGNORE_CASE),
-                Regex("""\\bnoon\\b""", RegexOption.IGNORE_CASE),
-                Regex("""\\bmidnight\\b""", RegexOption.IGNORE_CASE)
-            )
-            timePatterns.forEach { title = it.replace(title, "").trim() }
-        }
-        // Also remove the recurring phrase from original
-        title = Regex(patternFound, RegexOption.IGNORE_CASE).replace(title, "").trim()
-        return title.replaceFirstChar { it.uppercase() }.ifEmpty { cleaned.replaceFirstChar { it.uppercase() } }
+        val withoutRecurrence = Regex(Regex.escape(patternFound), RegexOption.IGNORE_CASE)
+            .replace(original, " ")
+        return cleanupTitle(withoutRecurrence, original)
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -312,4 +337,8 @@ class NaturalLanguageParser @Inject constructor() {
         "december", "dec" -> Month.DECEMBER
         else -> null
     }
+
+    // Recurring patterns always have an explicit date component (the pattern regex requires it);
+    // only the time can be defaulted, so confidence hinges on whether extractTime found one.
+    private fun timeConfidence(extractedTime: LocalTime?): Float = if (extractedTime != null) 1.0f else 0.85f
 }

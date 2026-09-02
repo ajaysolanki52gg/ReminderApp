@@ -26,7 +26,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Request notification permission on Android 13+
+        // Request notification permission on Android 13+. This applies to both Notification and
+        // Alarm modes, so it's requested unconditionally; the alarm-only exact-alarm /
+        // full-screen-intent permissions are requested contextually instead, from AddReminderScreen
+        // and SettingsScreen, only when the user actually picks Alarm mode.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }

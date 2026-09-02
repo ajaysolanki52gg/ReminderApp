@@ -30,6 +30,8 @@ val SageOnSurfaceVariant = Color(0xFF444841)
 
 val MutedAmber = Color(0xFFD4A017)
 val MutedAmberContainer = Color(0xFFFFF8EC)
+val MutedAmberDark = Color(0xFFE8C468)
+val MutedAmberContainerDark = Color(0xFF4A3B14)
 
 val MutedGreen = Color(0xFF6B8F71)
 val MutedGreenContainer = Color(0xFFF3F8F3)

@@ -25,16 +25,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.reminderapp.data.repository.ReminderRepository
 import com.reminderapp.domain.model.ReminderStatus
 import com.reminderapp.scheduler.ReminderScheduler
+import com.reminderapp.ui.components.MinutesInputDialog
 import com.reminderapp.ui.theme.ReminderAppTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.time.LocalDateTime
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -68,27 +67,9 @@ class AlarmActivity : ComponentActivity() {
                         stopAlarm()
                         if (reminderId != -1L) {
                             CoroutineScope(Dispatchers.IO).launch {
+                                repository.updateStatus(reminderId, ReminderStatus.MISSED)
                                 val reminder = repository.getReminderById(reminderId)
-                                reminder?.let { r ->
-                                    // 1. Mark current as MISSED
-                                    repository.updateStatus(reminderId, ReminderStatus.MISSED)
-                                    
-                                    // 2. Handle recurrence
-                                    if (r.recurrenceType != com.reminderapp.domain.model.RecurrenceType.NONE) {
-                                        val nextDate = scheduler.nextOccurrence(r)
-                                        if (nextDate != null) {
-                                            val nextReminder = r.copy(
-                                                id = 0,
-                                                reminderDateTime = nextDate,
-                                                status = ReminderStatus.ACTIVE,
-                                                createdAt = LocalDateTime.now(),
-                                                updatedAt = LocalDateTime.now()
-                                            )
-                                            val newId = repository.insertReminder(nextReminder)
-                                            scheduler.schedule(nextReminder.copy(id = newId))
-                                        }
-                                    }
-                                }
+                                reminder?.let { scheduler.rescheduleRecurring(it) }
                             }
                         }
                         notificationHelper.cancelNotification(reminderId)
@@ -98,29 +79,9 @@ class AlarmActivity : ComponentActivity() {
                         stopAlarm()
                         if (reminderId != -1L) {
                             CoroutineScope(Dispatchers.IO).launch {
+                                repository.updateStatus(reminderId, ReminderStatus.COMPLETED)
                                 val reminder = repository.getReminderById(reminderId)
-                                reminder?.let { r ->
-                                    if (r.recurrenceType != com.reminderapp.domain.model.RecurrenceType.NONE) {
-                                        if (r.status == ReminderStatus.MISSED) {
-                                            repository.updateStatus(reminderId, ReminderStatus.COMPLETED)
-                                        } else {
-                                            // Recurring: Update existing record to next time
-                                            val nextDate = scheduler.nextOccurrence(r)
-                                            if (nextDate != null) {
-                                                val updated = r.copy(
-                                                    reminderDateTime = nextDate,
-                                                    status = ReminderStatus.ACTIVE,
-                                                    updatedAt = LocalDateTime.now()
-                                                )
-                                                repository.updateReminder(updated)
-                                                scheduler.schedule(updated)
-                                            }
-                                        }
-                                    } else {
-                                        // One-time: Move to Completed
-                                        repository.updateStatus(reminderId, ReminderStatus.COMPLETED)
-                                    }
-                                }
+                                reminder?.let { scheduler.rescheduleRecurring(it) }
                             }
                         }
                         notificationHelper.cancelNotification(reminderId)
@@ -129,18 +90,7 @@ class AlarmActivity : ComponentActivity() {
                     onSnooze = { minutes ->
                         stopAlarm()
                         if (reminderId != -1L) {
-                            CoroutineScope(Dispatchers.IO).launch {
-                                val reminder = repository.getReminderById(reminderId)
-                                reminder?.let {
-                                    val snoozedTime = LocalDateTime.now().plusMinutes(minutes.toLong())
-                                    val snoozedReminder = it.copy(
-                                        reminderDateTime = snoozedTime,
-                                        status = ReminderStatus.ACTIVE
-                                    )
-                                    repository.updateReminder(snoozedReminder)
-                                    scheduler.schedule(snoozedReminder)
-                                }
-                            }
+                            scheduler.snooze(reminderId, title, description, minutes)
                         }
                         notificationHelper.cancelNotification(reminderId)
                         finish()
@@ -219,7 +169,7 @@ private fun AlarmScreen(
     onSnooze: (Int) -> Unit
 ) {
     var showSnoozeOptions by remember { mutableStateOf(false) }
-    var showCustomSnoozeDialog by remember { mutableStateOf(false) }
+    var showCustomSnooze by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -229,21 +179,14 @@ private fun AlarmScreen(
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
             modifier = Modifier.padding(32.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Alarm,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(64.dp)
-            )
-
-            Text(
-                text = "ALARM",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
+                modifier = Modifier.size(80.dp)
             )
 
             Text(
@@ -262,20 +205,21 @@ private fun AlarmScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             Button(
                 onClick = onComplete,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
             ) {
                 Text("Mark Complete", fontSize = 16.sp)
             }
 
             OutlinedButton(
                 onClick = { showSnoozeOptions = !showSnoozeOptions },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Snooze", fontSize = 16.sp)
             }
@@ -283,41 +227,35 @@ private fun AlarmScreen(
             if (showSnoozeOptions) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    )
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(8.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        val options = listOf(
-                            5 to "5 minutes",
-                            10 to "10 minutes",
-                            60 to "1 hour",
-                            120 to "2 hours"
-                        )
-                        
-                        options.forEach { (mins, label) ->
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        listOf(5, 10, 30, 60).forEach { minutes ->
                             TextButton(
-                                onClick = { onSnooze(mins) },
+                                onClick = { onSnooze(minutes) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(label)
+                                Text(if (minutes < 60) "$minutes minutes" else "1 hour")
                             }
                         }
-                        
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        
                         TextButton(
-                            onClick = { showCustomSnoozeDialog = true },
+                            onClick = { showCustomSnooze = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Custom...")
+                            Text("Custom")
                         }
                     }
                 }
+            }
+
+            if (showCustomSnooze) {
+                MinutesInputDialog(
+                    onDismiss = { showCustomSnooze = false },
+                    onConfirm = { minutes ->
+                        showCustomSnooze = false
+                        onSnooze(minutes)
+                    }
+                )
             }
 
             TextButton(onClick = onDismiss) {
@@ -325,53 +263,4 @@ private fun AlarmScreen(
             }
         }
     }
-
-    if (showCustomSnoozeDialog) {
-        CustomSnoozeDialog(
-            onDismiss = { showCustomSnoozeDialog = false },
-            onConfirm = { mins ->
-                showCustomSnoozeDialog = false
-                onSnooze(mins)
-            }
-        )
-    }
-}
-
-@Composable
-private fun CustomSnoozeDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (Int) -> Unit
-) {
-    var minutes by remember { mutableStateOf("") }
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Custom Snooze") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Enter minutes to snooze:")
-                OutlinedTextField(
-                    value = minutes,
-                    onValueChange = { if (it.all { char -> char.isDigit() }) minutes = it },
-                    placeholder = { Text("e.g. 15") },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { 
-                    minutes.toIntOrNull()?.let { onConfirm(it) }
-                },
-                enabled = minutes.isNotEmpty()
-            ) {
-                Text("Snooze")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
 }

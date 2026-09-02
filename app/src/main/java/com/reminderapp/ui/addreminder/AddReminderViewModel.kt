@@ -9,6 +9,7 @@ import com.reminderapp.domain.parser.NaturalLanguageParser
 import com.reminderapp.scheduler.ReminderScheduler
 import com.reminderapp.speech.SpeechRecognitionManager
 import com.reminderapp.speech.SpeechState
+import com.reminderapp.util.PendingReminderHolder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -39,13 +40,16 @@ class AddReminderViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val scheduler: ReminderScheduler,
     private val parser: NaturalLanguageParser,
-    private val speechManager: SpeechRecognitionManager
+    private val speechManager: SpeechRecognitionManager,
+    private val pendingReminderHolder: PendingReminderHolder
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AddReminderUiState())
     val uiState: StateFlow<AddReminderUiState> = _uiState.asStateFlow()
 
     val speechState: StateFlow<SpeechState> = speechManager.state
+    val isListening: StateFlow<Boolean> = speechManager.isListening
+    val audioLevel: StateFlow<Float> = speechManager.audioLevel
 
     init {
         viewModelScope.launch {
@@ -53,7 +57,13 @@ class AddReminderViewModel @Inject constructor(
                 _uiState.update { it.copy(notificationMode = settings.defaultNotificationMode) }
             }
         }
+        // Prefill from a reminder parsed on the Home screen's assistant bar, if the user tapped
+        // "Edit" to bring it here rather than saving it directly.
+        pendingReminderHolder.consume()?.let { prefillFromParsed(it) }
     }
+
+    /** Stashes a not-yet-saved parsed [Reminder] for the next AddReminderViewModel instance to pick up. */
+    fun stashForEdit(reminder: Reminder) = pendingReminderHolder.set(reminder)
 
     fun loadReminder(reminderId: Long) {
         viewModelScope.launch {
@@ -88,7 +98,6 @@ class AddReminderViewModel @Inject constructor(
             ReminderType.ONE_TIME -> RecurrenceType.NONE
             ReminderType.DAILY -> RecurrenceType.DAILY
             ReminderType.WEEKLY -> RecurrenceType.WEEKLY
-            ReminderType.BIWEEKLY -> RecurrenceType.BIWEEKLY
             ReminderType.MONTHLY -> RecurrenceType.MONTHLY
             ReminderType.YEARLY -> RecurrenceType.YEARLY
         }
@@ -130,11 +139,6 @@ class AddReminderViewModel @Inject constructor(
     fun startVoiceInput() = speechManager.startListening()
     fun stopVoiceInput() = speechManager.stopListening()
     fun resetSpeechState() = speechManager.resetState()
-
-    fun restartVoiceInput() {
-        speechManager.stopListening()
-        speechManager.startListening()
-    }
 
     // ─── Save ─────────────────────────────────────────────────────────────────
 

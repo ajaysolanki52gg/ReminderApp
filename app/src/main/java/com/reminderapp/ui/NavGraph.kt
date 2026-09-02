@@ -13,18 +13,9 @@ import com.reminderapp.ui.settings.SettingsScreen
 
 sealed class Screen(val route: String) {
     object Home : Screen("home")
-    object AddReminder : Screen("add_reminder?reminderId={reminderId}&initialText={initialText}") {
-        fun createRoute(reminderId: Long? = null, initialText: String? = null) =
-            buildString {
-                append("add_reminder")
-                val params = mutableListOf<String>()
-                if (reminderId != null) params.add("reminderId=$reminderId")
-                if (initialText != null) params.add("initialText=$initialText")
-                if (params.isNotEmpty()) {
-                    append("?")
-                    append(params.joinToString("&"))
-                }
-            }
+    object AddReminder : Screen("add_reminder?reminderId={reminderId}") {
+        fun createRoute(reminderId: Long? = null) =
+            if (reminderId != null) "add_reminder?reminderId=$reminderId" else "add_reminder"
     }
     object ReminderDetail : Screen("reminder_detail/{reminderId}") {
         fun createRoute(reminderId: Long) = "reminder_detail/$reminderId"
@@ -41,9 +32,7 @@ fun ReminderNavGraph(navController: NavHostController) {
         composable(Screen.Home.route) {
             HomeScreen(
                 onNavigateToAddReminder = { navController.navigate(Screen.AddReminder.createRoute()) },
-                onNavigateToAddReminderWithText = { text -> 
-                    navController.navigate(Screen.AddReminder.createRoute(initialText = text)) 
-                },
+                onNavigateToEditReminder = { id -> navController.navigate(Screen.AddReminder.createRoute(id)) },
                 onNavigateToDetail = { id -> navController.navigate(Screen.ReminderDetail.createRoute(id)) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
             )
@@ -55,19 +44,12 @@ fun ReminderNavGraph(navController: NavHostController) {
                 navArgument("reminderId") {
                     type = NavType.LongType
                     defaultValue = -1L
-                },
-                navArgument("initialText") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
                 }
             )
         ) { backStackEntry ->
             val reminderId = backStackEntry.arguments?.getLong("reminderId")?.takeIf { it != -1L }
-            val initialText = backStackEntry.arguments?.getString("initialText")
             AddReminderScreen(
                 reminderId = reminderId,
-                initialText = initialText,
                 onNavigateBack = { navController.popBackStack() }
             )
         }

@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -21,7 +22,8 @@ fun SectionHeader(
     title: String,
     count: Int,
     isExpanded: Boolean,
-    onToggle: (() -> Unit)?
+    onToggle: (() -> Unit)?,
+    dotColor: Color = MaterialTheme.colorScheme.primary
 ) {
     Row(
         modifier = Modifier
@@ -42,7 +44,7 @@ fun SectionHeader(
                 modifier = Modifier
                     .size(8.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(dotColor)
             )
 
             Text(

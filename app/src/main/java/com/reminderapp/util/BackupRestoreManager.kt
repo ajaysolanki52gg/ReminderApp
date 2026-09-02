@@ -8,6 +8,8 @@ import com.google.gson.JsonDeserializer
 import com.google.gson.JsonSerializer
 import com.reminderapp.data.repository.ReminderRepository
 import com.reminderapp.domain.model.Reminder
+import com.reminderapp.domain.model.ReminderStatus
+import com.reminderapp.scheduler.ReminderScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -22,7 +24,8 @@ import javax.inject.Singleton
 @Singleton
 class BackupRestoreManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val repository: ReminderRepository
+    private val repository: ReminderRepository,
+    private val scheduler: ReminderScheduler
 ) {
     private val formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME
     private val gson: Gson = GsonBuilder()
@@ -40,10 +43,10 @@ class BackupRestoreManager @Inject constructor(
             val reminders = repository.getAllReminders()
             val json = gson.toJson(reminders)
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                OutputStreamWriter(outputStream).use { writer ->
+                OutputStreamWriter(outputStream, Charsets.UTF_8).use { writer ->
                     writer.write(json)
                 }
-            }
+            } ?: return@withContext Result.failure(Exception("Could not open output stream"))
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -53,17 +56,35 @@ class BackupRestoreManager @Inject constructor(
     suspend fun importBackup(uri: Uri): Result<Int> = withContext(Dispatchers.IO) {
         try {
             val json = context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                BufferedReader(InputStreamReader(inputStream)).readText()
+                BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).readText()
             } ?: return@withContext Result.failure(Exception("Could not read file"))
 
-            val type = object : com.google.gson.reflect.TypeToken<List<Reminder>>() {}.type
-            val reminders: List<Reminder> = gson.fromJson(json, type)
-
-            reminders.forEach { reminder ->
-                repository.insertReminder(reminder.copy(id = 0)) // reset id for re-insert
+            if (json.isBlank()) {
+                return@withContext Result.failure(Exception("Backup file is empty"))
             }
 
-            Result.success(reminders.size)
+            val type = object : com.google.gson.reflect.TypeToken<List<Reminder>>() {}.type
+            val importedReminders: List<Reminder> = gson.fromJson(json, type)
+                ?: return@withContext Result.failure(Exception("Invalid backup format"))
+
+            // 1. Cancel all existing notifications/alarms before clearing the DB
+            scheduler.cancelAll()
+
+            // 2. Clear existing database
+            repository.deleteAllReminders()
+
+            // 3. Insert imported reminders (reset IDs to 0 to ensure new unique IDs)
+            val remindersToInsert = importedReminders.map { it.copy(id = 0) }
+            val newIds = repository.insertReminders(remindersToInsert)
+
+            // 4. Schedule active reminders with their new IDs
+            remindersToInsert.zip(newIds).forEach { (reminder, newId) ->
+                if (reminder.status == ReminderStatus.ACTIVE) {
+                    scheduler.schedule(reminder.copy(id = newId))
+                }
+            }
+
+            Result.success(importedReminders.size)
         } catch (e: Exception) {
             Result.failure(e)
         }

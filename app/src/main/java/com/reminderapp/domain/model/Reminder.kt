@@ -8,7 +8,6 @@ enum class ReminderType {
     ONE_TIME,
     DAILY,
     WEEKLY,
-    BIWEEKLY,
     MONTHLY,
     YEARLY
 }
@@ -17,7 +16,6 @@ enum class RecurrenceType {
     NONE,
     DAILY,
     WEEKLY,
-    BIWEEKLY,
     MONTHLY,
     YEARLY
 }

@@ -11,11 +11,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reminderapp.domain.model.NotificationMode
 import com.reminderapp.domain.model.ReminderType
+import com.reminderapp.util.requestAlarmReliabilityPermissionsIfNeeded
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -24,31 +26,20 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun AddReminderScreen(
     reminderId: Long? = null,
-    initialText: String? = null,
     onNavigateBack: () -> Unit,
     viewModel: AddReminderViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
-    LaunchedEffect(reminderId, initialText) {
-        if (reminderId != null) {
-            viewModel.loadReminder(reminderId)
-        } else if (initialText != null) {
-            val result = viewModel.parseInput(initialText)
-            viewModel.prefillFromParsed(viewModel.buildReminderFromParse(result))
-        }
+    LaunchedEffect(reminderId) {
+        reminderId?.let { viewModel.loadReminder(it) }
     }
 
     LaunchedEffect(uiState.saveSuccess) {
         if (uiState.saveSuccess) onNavigateBack()
-    }
-
-    uiState.error?.let { error ->
-        LaunchedEffect(error) {
-            // Auto-dismiss after 3s - shown via snackbar
-        }
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -210,7 +201,12 @@ fun AddReminderScreen(
                 NotificationMode.entries.forEach { mode ->
                     FilterChip(
                         selected = uiState.notificationMode == mode,
-                        onClick = { viewModel.updateNotificationMode(mode) },
+                        onClick = {
+                            viewModel.updateNotificationMode(mode)
+                            if (mode == NotificationMode.ALARM) {
+                                context.requestAlarmReliabilityPermissionsIfNeeded()
+                            }
+                        },
                         label = {
                             Text(
                                 text = mode.name.lowercase().replaceFirstChar { it.uppercase() },
@@ -296,7 +292,6 @@ private fun ReminderTypeSelector(
         ReminderType.ONE_TIME to "Once",
         ReminderType.DAILY to "Daily",
         ReminderType.WEEKLY to "Weekly",
-        ReminderType.BIWEEKLY to "Bi-weekly",
         ReminderType.MONTHLY to "Monthly",
         ReminderType.YEARLY to "Yearly"
     )
