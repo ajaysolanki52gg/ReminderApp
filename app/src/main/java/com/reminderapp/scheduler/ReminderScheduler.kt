@@ -87,9 +87,15 @@ class ReminderScheduler @Inject constructor(
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
 
     /** Re-fires the alarm/notification for [reminderId] after [minutes], used by the Snooze action. */
-    fun snooze(reminderId: Long, title: String, description: String, minutes: Int) {
-        val triggerMillis = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(minutes.toLong())
-        scheduleAlarmBroadcast(reminderId, title, description, triggerMillis)
+    suspend fun snooze(reminderId: Long, minutes: Int) {
+        val reminder = repository.getReminderById(reminderId) ?: return
+        val newDateTime = LocalDateTime.now().plusMinutes(minutes.toLong())
+        val updatedReminder = reminder.copy(
+            reminderDateTime = newDateTime,
+            status = ReminderStatus.ACTIVE
+        )
+        repository.updateReminder(updatedReminder)
+        schedule(updatedReminder)
     }
 
     private fun scheduleAlarm(reminder: Reminder, triggerMillis: Long) =

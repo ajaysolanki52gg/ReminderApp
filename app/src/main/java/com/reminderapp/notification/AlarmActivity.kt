@@ -90,7 +90,9 @@ class AlarmActivity : ComponentActivity() {
                     onSnooze = { minutes ->
                         stopAlarm()
                         if (reminderId != -1L) {
-                            scheduler.snooze(reminderId, title, description, minutes)
+                            CoroutineScope(Dispatchers.IO).launch {
+                                scheduler.snooze(reminderId, minutes)
+                            }
                         }
                         notificationHelper.cancelNotification(reminderId)
                         finish()

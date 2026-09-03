@@ -56,13 +56,7 @@ class SnoozeActivity : ComponentActivity() {
                                     title = reminder.title,
                                     onSnooze = { minutes ->
                                         CoroutineScope(Dispatchers.IO).launch {
-                                            val snoozedTime = LocalDateTime.now().plusMinutes(minutes.toLong())
-                                            val snoozedReminder = reminder.copy(
-                                                reminderDateTime = snoozedTime,
-                                                status = ReminderStatus.ACTIVE
-                                            )
-                                            repository.updateReminder(snoozedReminder)
-                                            scheduler.schedule(snoozedReminder)
+                                            scheduler.snooze(reminderId, minutes)
                                         }
                                         notificationHelper.cancelNotification(reminderId)
                                         finish()

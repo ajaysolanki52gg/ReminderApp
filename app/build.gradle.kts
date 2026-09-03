@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
@@ -7,12 +8,12 @@ plugins {
 
 android {
     namespace = "com.reminderapp"
-    compileSdk = 37
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.reminderapp"
         minSdk = 26
-        targetSdk = 37
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
 
@@ -81,4 +82,10 @@ dependencies {
     implementation(libs.material)
 
     debugImplementation(libs.androidx.ui.tooling)
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }

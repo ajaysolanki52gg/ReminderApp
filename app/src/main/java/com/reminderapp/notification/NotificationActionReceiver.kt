@@ -39,12 +39,9 @@ class NotificationActionReceiver : BroadcastReceiver() {
             NotificationHelper.ACTION_SNOOZE -> {
                 val snoozeMinutes = intent.getIntExtra(NotificationHelper.EXTRA_SNOOZE_MINUTES, 10)
                 notificationHelper.cancelNotification(reminderId)
-                scheduler.snooze(
-                    reminderId,
-                    intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_TITLE) ?: "Reminder",
-                    intent.getStringExtra(ReminderScheduler.EXTRA_REMINDER_DESCRIPTION) ?: "",
-                    snoozeMinutes
-                )
+                CoroutineScope(Dispatchers.IO).launch {
+                    scheduler.snooze(reminderId, snoozeMinutes)
+                }
             }
         }
     }
