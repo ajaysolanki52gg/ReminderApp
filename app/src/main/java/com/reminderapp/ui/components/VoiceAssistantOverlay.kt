@@ -27,6 +27,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.reminderapp.ui.addreminder.AddReminderViewModel
 import com.reminderapp.speech.SpeechState
 
+/**
+ * 🎙️ Voice Assistant Overlay (Legacy / Standalone)
+ * 
+ * NOTE: This component is currently standalone. The main voice logic is in AssistantInputBar.
+ * It has been fixed to avoid redundant listening triggers.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VoiceAssistantOverlay(
@@ -35,8 +41,9 @@ fun VoiceAssistantOverlay(
     viewModel: AddReminderViewModel = hiltViewModel()
 ) {
     val speechState by viewModel.speechState.collectAsState()
+    val isListening by viewModel.isListening.collectAsState()
+    
     var sessionText by remember { mutableStateOf("") }
-    var currentPartialText by remember { mutableStateOf("") }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -51,24 +58,13 @@ fun VoiceAssistantOverlay(
     LaunchedEffect(speechState) {
         when (val state = speechState) {
             is SpeechState.PartialResult -> {
-                currentPartialText = state.text
+                sessionText = state.text
             }
             is SpeechState.Result -> {
-                if (state.text.isNotEmpty()) {
-                    sessionText = if (sessionText.isEmpty()) state.text else "$sessionText ${state.text}"
-                }
-                currentPartialText = ""
-                viewModel.startVoiceInput()
-            }
-            is SpeechState.Idle -> {
-                viewModel.startVoiceInput()
+                sessionText = state.text
             }
             else -> {}
         }
-    }
-
-    val displayText = remember(sessionText, currentPartialText) {
-        if (sessionText.isEmpty()) currentPartialText else "$sessionText $currentPartialText".trim()
     }
 
     ModalBottomSheet(
@@ -107,11 +103,11 @@ fun VoiceAssistantOverlay(
                 )
 
                 AssistantVisualizer(
-                    isListening = speechState is SpeechState.Listening || speechState is SpeechState.PartialResult
+                    isListening = isListening
                 )
 
                 GradientTextCard(
-                    text = if (displayText.isEmpty()) "How can I help?" else displayText,
+                    text = if (sessionText.isEmpty()) "How can I help?" else sessionText,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)
                 )
 
@@ -122,8 +118,8 @@ fun VoiceAssistantOverlay(
                 ) {
                     FilledTonalIconButton(
                         onClick = { 
-                            sessionText = ""
-                            currentPartialText = ""
+                            viewModel.stopVoiceInput()
+                            viewModel.resetSpeechState()
                             viewModel.startVoiceInput()
                         },
                         modifier = Modifier.size(56.dp),
@@ -138,7 +134,7 @@ fun VoiceAssistantOverlay(
                     Button(
                         onClick = {
                             viewModel.stopVoiceInput()
-                            if (displayText.isNotEmpty()) onResult(displayText) else onDismiss()
+                            if (sessionText.isNotEmpty()) onResult(sessionText) else onDismiss()
                         },
                         modifier = Modifier.weight(1f).height(56.dp),
                         shape = RoundedCornerShape(32.dp),
@@ -153,7 +149,10 @@ fun VoiceAssistantOverlay(
                     }
 
                     FilledTonalIconButton(
-                        onClick = onDismiss,
+                        onClick = {
+                            viewModel.stopVoiceInput()
+                            onDismiss()
+                        },
                         modifier = Modifier.size(56.dp),
                         shape = CircleShape,
                         colors = IconButtonDefaults.filledTonalIconButtonColors(
