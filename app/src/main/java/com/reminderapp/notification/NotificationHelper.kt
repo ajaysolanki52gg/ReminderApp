@@ -24,8 +24,6 @@ class NotificationHelper @Inject constructor(
         const val CHANNEL_REMINDERS = "channel_reminders"
         const val CHANNEL_ALARMS = "channel_alarms"
         const val ACTION_COMPLETE = "action_complete_reminder"
-        const val ACTION_SNOOZE = "action_snooze_reminder"
-        const val EXTRA_SNOOZE_MINUTES = "snooze_minutes"
     }
 
     private val notificationManager =
@@ -69,7 +67,7 @@ class NotificationHelper @Inject constructor(
         notificationManager.createNotificationChannels(listOf(reminderChannel, alarmChannel))
     }
 
-    fun showReminderNotification(reminderId: Long, title: String, description: String, snoozeMinutes: Int = 10) {
+    fun showReminderNotification(reminderId: Long, title: String, description: String) {
         val tapIntent = Intent(context, MainActivity::class.java).apply {
             putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -88,12 +86,10 @@ class NotificationHelper @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val snoozeIntent = Intent(context, NotificationActionReceiver::class.java).apply {
-            action = ACTION_SNOOZE
+        val snoozeIntent = Intent(context, SnoozeActivity::class.java).apply {
             putExtra(ReminderScheduler.EXTRA_REMINDER_ID, reminderId)
-            putExtra(EXTRA_SNOOZE_MINUTES, snoozeMinutes)
         }
-        val snoozePendingIntent = PendingIntent.getBroadcast(
+        val snoozePendingIntent = PendingIntent.getActivity(
             context, (reminderId * 10 + 2).toInt(), snoozeIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

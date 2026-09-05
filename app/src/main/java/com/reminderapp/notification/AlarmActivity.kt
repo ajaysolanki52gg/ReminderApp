@@ -28,12 +28,13 @@ import androidx.compose.ui.unit.sp
 import com.reminderapp.data.repository.ReminderRepository
 import com.reminderapp.domain.model.ReminderStatus
 import com.reminderapp.scheduler.ReminderScheduler
-import com.reminderapp.ui.components.MinutesInputDialog
+import com.reminderapp.ui.components.SnoozeSelector
 import com.reminderapp.ui.theme.ReminderAppTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.time.LocalDateTime
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -87,11 +88,21 @@ class AlarmActivity : ComponentActivity() {
                         notificationHelper.cancelNotification(reminderId)
                         finish()
                     },
-                    onSnooze = { minutes ->
+                    onSnoozeMinutes = { minutes ->
                         stopAlarm()
                         if (reminderId != -1L) {
                             CoroutineScope(Dispatchers.IO).launch {
                                 scheduler.snooze(reminderId, minutes)
+                            }
+                        }
+                        notificationHelper.cancelNotification(reminderId)
+                        finish()
+                    },
+                    onSnoozeDateTime = { dateTime ->
+                        stopAlarm()
+                        if (reminderId != -1L) {
+                            CoroutineScope(Dispatchers.IO).launch {
+                                scheduler.snooze(reminderId, dateTime)
                             }
                         }
                         notificationHelper.cancelNotification(reminderId)
@@ -168,10 +179,10 @@ private fun AlarmScreen(
     description: String,
     onDismiss: () -> Unit,
     onComplete: () -> Unit,
-    onSnooze: (Int) -> Unit
+    onSnoozeMinutes: (Int) -> Unit,
+    onSnoozeDateTime: (LocalDateTime) -> Unit
 ) {
     var showSnoozeOptions by remember { mutableStateOf(false) }
-    var showCustomSnooze by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -219,49 +230,24 @@ private fun AlarmScreen(
                 Text("Mark Complete", fontSize = 16.sp)
             }
 
-            OutlinedButton(
-                onClick = { showSnoozeOptions = !showSnoozeOptions },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Snooze", fontSize = 16.sp)
-            }
-
-            if (showSnoozeOptions) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+            if (!showSnoozeOptions) {
+                OutlinedButton(
+                    onClick = { showSnoozeOptions = true },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        listOf(5, 10, 30, 60).forEach { minutes ->
-                            TextButton(
-                                onClick = { onSnooze(minutes) },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(if (minutes < 60) "$minutes minutes" else "1 hour")
-                            }
-                        }
-                        TextButton(
-                            onClick = { showCustomSnooze = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Custom")
-                        }
-                    }
+                    Text("Snooze", fontSize = 16.sp)
                 }
-            }
 
-            if (showCustomSnooze) {
-                MinutesInputDialog(
-                    onDismiss = { showCustomSnooze = false },
-                    onConfirm = { minutes ->
-                        showCustomSnooze = false
-                        onSnooze(minutes)
-                    }
+                TextButton(onClick = onDismiss) {
+                    Text("Dismiss", color = MaterialTheme.colorScheme.error)
+                }
+            } else {
+                SnoozeSelector(
+                    title = title,
+                    onSnoozeMinutes = onSnoozeMinutes,
+                    onSnoozeDateTime = onSnoozeDateTime,
+                    onCancel = { showSnoozeOptions = false }
                 )
-            }
-
-            TextButton(onClick = onDismiss) {
-                Text("Dismiss", color = MaterialTheme.colorScheme.error)
             }
         }
     }

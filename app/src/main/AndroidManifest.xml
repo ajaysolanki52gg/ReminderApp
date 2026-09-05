@@ -44,6 +44,15 @@
             android:theme="@style/Theme.ReminderApp.Alarm"
             tools:targetApi="o_mr1" />
 
+        <!-- Snooze Activity -->
+        <activity
+            android:name=".notification.SnoozeActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ReminderApp.Dialog"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            tools:targetApi="o_mr1" />
+
         <!-- Boot Receiver -->
         <receiver
             android:name=".scheduler.BootReceiver"

@@ -19,8 +19,7 @@ class ReminderNotificationWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val notificationHelper: NotificationHelper,
     private val repository: ReminderRepository,
-    private val scheduler: ReminderScheduler,
-    private val settingsRepository: SettingsRepository
+    private val scheduler: ReminderScheduler
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
@@ -30,8 +29,7 @@ class ReminderNotificationWorker @AssistedInject constructor(
 
         if (reminderId == -1L) return Result.failure()
 
-        val snoozeMinutes = settingsRepository.settings.first().defaultSnoozeDuration
-        notificationHelper.showReminderNotification(reminderId, title, description, snoozeMinutes)
+        notificationHelper.showReminderNotification(reminderId, title, description)
 
         // Mark missed if not completed, reschedule if recurring
         val reminder = repository.getReminderById(reminderId)

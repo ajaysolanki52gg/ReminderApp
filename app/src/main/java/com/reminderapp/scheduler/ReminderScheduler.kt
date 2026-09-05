@@ -88,8 +88,12 @@ class ReminderScheduler @Inject constructor(
 
     /** Re-fires the alarm/notification for [reminderId] after [minutes], used by the Snooze action. */
     suspend fun snooze(reminderId: Long, minutes: Int) {
+        snooze(reminderId, LocalDateTime.now().plusMinutes(minutes.toLong()))
+    }
+
+    /** Re-fires the alarm/notification for [reminderId] at [newDateTime]. */
+    suspend fun snooze(reminderId: Long, newDateTime: LocalDateTime) {
         val reminder = repository.getReminderById(reminderId) ?: return
-        val newDateTime = LocalDateTime.now().plusMinutes(minutes.toLong())
         val updatedReminder = reminder.copy(
             reminderDateTime = newDateTime,
             status = ReminderStatus.ACTIVE
