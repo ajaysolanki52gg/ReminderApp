@@ -1,12 +1,71 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.ReminderApp" parent="Theme.Material3.DayNight.NoActionBar" />
-    <style name="Theme.ReminderApp.Alarm" parent="Theme.Material3.DayNight.NoActionBar" />
-    <style name="Theme.ReminderApp.Dialog" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="android:windowBackground">@android:color/transparent</item>
-        <item name="android:windowIsTranslucent">true</item>
-        <item name="android:windowContentOverlay">@null</item>
-        <item name="android:windowNoTitle">true</item>
-        <item name="android:backgroundDimEnabled">true</item>
+    <!-- Mediterranean Coastal Theme with Material3 -->
+    <style name="Theme.ReminderApp" parent="Theme.Material3.Light.NoActionBar">
+
+        <!-- Primary Colors (Deep Ocean Blue) -->
+        <item name="colorPrimary">@color/coastal_primary</item>
+        <item name="colorOnPrimary">@color/coastal_on_primary</item>
+        <item name="colorPrimaryContainer">@color/coastal_primary_container</item>
+        <item name="colorOnPrimaryContainer">#0A2437</item>
+        
+        <!-- Secondary Colors (Terracotta Clay) -->
+        <item name="colorSecondary">@color/coastal_secondary</item>
+        <item name="colorOnSecondary">@color/coastal_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/coastal_secondary_container</item>
+        <item name="colorOnSecondaryContainer">#3E1F10</item>
+        
+        <!-- Tertiary Colors (Sandy Beige) -->
+        <item name="colorTertiary">@color/coastal_tertiary</item>
+        <item name="colorOnTertiary">@color/coastal_on_tertiary</item>
+        <item name="colorTertiaryContainer">#F2EAE0</item>
+        <item name="colorOnTertiaryContainer">#262016</item>
+        
+        <!-- Surface Colors (Creamy Sand) -->
+        <item name="android:colorBackground">@color/coastal_surface</item>
+        <item name="colorSurface">@color/coastal_surface</item>
+        <item name="colorOnSurface">@color/coastal_on_surface</item>
+        
+        <!-- Status Bar & Navigation -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+
+        <!-- Accent & Error -->
+        <item name="colorError">@color/coastal_error</item>
+        <item name="colorOnError">#FFFFFF</item>
     </style>
+
+    <!-- Dark Theme Variant -->
+    <style name="Theme.ReminderApp.Dark" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/coastal_primary_container</item>
+        <item name="colorOnPrimary">#0A2437</item>
+        <item name="android:colorBackground">#1A1C1E</item>
+        <item name="colorSurface">#1A1C1E</item>
+        <item name="colorOnSurface">#E2E2E6</item>
+    </style>
+
+    <!-- Mediterranean Accents -->
+    <style name="Widget.ReminderApp.Button.Coastal" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/coastal_primary</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="cornerRadius">12dp</item>
+    </style>
+
+    <style name="Widget.ReminderApp.Button.Terracotta" parent="Widget.Material3.Button">
+        <item name="backgroundTint">@color/coastal_secondary</item>
+        <item name="android:textColor">@color/white</item>
+        <item name="cornerRadius">12dp</item>
+    </style>
+
+    <!-- Full Screen Alarm Theme -->
+    <style name="Theme.ReminderApp.Alarm" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/coastal_primary</item>
+    </style>
+
+    <!-- Dialog Theme -->
+    <style name="Theme.ReminderApp.Dialog" parent="Theme.Material3.DayNight.Dialog">
+        <item name="colorPrimary">@color/coastal_primary</item>
+        <item name="colorSurface">@color/coastal_surface</item>
+    </style>
+
 </resources>

@@ -86,20 +86,30 @@ class SpeechRecognitionManager @Inject constructor(
                 override fun onBeginningOfSpeech() {}
 
                 override fun onRmsChanged(rmsdB: Float) {
+                    // Normalize RMS dB (approx -2 to 10) to 0f-1f range for UI.
                     _audioLevel.value = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
                 }
 
                 override fun onBufferReceived(buffer: ByteArray?) {}
 
-                override fun onEndOfSpeech() {}
+                override fun onEndOfSpeech() {
+                    // Session ended naturally; RMS should drop to 0 until next session starts.
+                    _audioLevel.value = 0f
+                }
 
                 override fun onError(error: Int) {
+                    _audioLevel.value = 0f
                     when (error) {
                         SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
-                            // A brief silence, not a real failure: resume listening automatically
-                            // so a mid-sentence pause doesn't end the session.
+                            // A brief silence, not a real failure: resume listening automatically.
+                            // We call cancel() first to ensure the recognizer is in a clean state.
                             if (isListeningRequested) {
-                                speechRecognizer?.startListening(buildRecognizerIntent())
+                                try {
+                                    speechRecognizer?.cancel()
+                                    speechRecognizer?.startListening(buildRecognizerIntent())
+                                } catch (e: Exception) {
+                                    restartListeningManually()
+                                }
                             } else {
                                 _state.value = SpeechState.Idle
                             }
@@ -107,7 +117,6 @@ class SpeechRecognitionManager @Inject constructor(
                         else -> {
                             isListeningRequested = false
                             _isListening.value = false
-                            _audioLevel.value = 0f
                             val message = when (error) {
                                 SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
                                 SpeechRecognizer.ERROR_CLIENT -> "Client side error"
@@ -116,7 +125,7 @@ class SpeechRecognitionManager @Inject constructor(
                                 SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
                                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognizer busy"
                                 SpeechRecognizer.ERROR_SERVER -> "Server error"
-                                else -> "Unknown error"
+                                else -> "Speech recognition error ($error)"
                             }
                             _state.value = SpeechState.Error(message)
                         }
@@ -124,6 +133,7 @@ class SpeechRecognitionManager @Inject constructor(
                 }
 
                 override fun onResults(results: Bundle?) {
+                    _audioLevel.value = 0f
                     val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     val text = matches?.firstOrNull()
                     if (!text.isNullOrBlank()) {
@@ -131,10 +141,13 @@ class SpeechRecognitionManager @Inject constructor(
                     }
                     latestMergedText = accumulatedText
                     if (isListeningRequested) {
-                        // Keep the mic open: a finished recognition pass just means the recognizer
-                        // detected a pause, not that the user is done speaking.
-                        _state.value = SpeechState.PartialResult(accumulatedText)
-                        speechRecognizer?.startListening(buildRecognizerIntent())
+                        // Restart for continuous listening
+                        try {
+                            speechRecognizer?.cancel()
+                            speechRecognizer?.startListening(buildRecognizerIntent())
+                        } catch (e: Exception) {
+                            restartListeningManually()
+                        }
                     } else {
                         _state.value = if (accumulatedText.isNotBlank()) {
                             SpeechState.Result(accumulatedText)
@@ -197,6 +210,13 @@ class SpeechRecognitionManager @Inject constructor(
         accumulatedText = ""
         latestMergedText = ""
         _state.value = SpeechState.Idle
+    }
+
+    private fun restartListeningManually() {
+        speechRecognizer?.destroy()
+        speechRecognizer = null
+        isListeningRequested = false
+        startListening()
     }
 }
 

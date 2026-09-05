@@ -1,7 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="sage_primary">#6B8F71</color>
-    <color name="sage_secondary">#A3B18A</color>
-    <color name="sage_background">#F7F8F6</color>
-    <color name="ic_launcher_background">#F7F8F6</color>
+    <!-- Mediterranean Coastal Theme - Warm & Inviting -->
+    
+    <!-- Primary Colors (Ocean Blue) -->
+    <color name="coastal_primary">#1A4D6E</color>
+    <color name="coastal_on_primary">#FFFFFF</color>
+    <color name="coastal_primary_container">#D6E4ED</color>
+    
+    <!-- Secondary Colors (Terracotta Clay) -->
+    <color name="coastal_secondary">#C97043</color>
+    <color name="coastal_on_secondary">#FFFFFF</color>
+    <color name="coastal_secondary_container">#F9E7DE</color>
+
+    <!-- Surface Colors (Creamy Sand) -->
+    <color name="coastal_surface">#F5F2EB</color>
+    <color name="coastal_on_surface">#1A1C1E</color>
+    
+    <!-- Tertiary Colors (Sandy Beige) -->
+    <color name="coastal_tertiary">#D4B896</color>
+    <color name="coastal_on_tertiary">#1F1A12</color>
+
+    <!-- Functional Colors -->
+    <color name="coastal_error">#BA1A1A</color>
+    <color name="coastal_success">#4E7D6B</color>
+    <color name="coastal_warning">#C99B2E</color>
+
+    <!-- Icon & Special Colors -->
+    <color name="ic_launcher_background">#1A4D6E</color>
+    <color name="ic_launcher_foreground">#FFFFFF</color>
+
+    <!-- Essential & Legacy Colors -->
+    <color name="white">#FFFFFF</color>
+    <color name="earth_primary">#C97043</color> <!-- Re-mapped to Terracotta -->
+    <color name="ocean_primary">#1A4D6E</color> <!-- Re-mapped to Coastal Blue -->
+    <color name="ocean_primary_variant">#0A2437</color>
+    <color name="ocean_secondary">#C97043</color>
+    <color name="ocean_secondary_variant">#3E1F10</color>
+    <color name="ocean_background">#F5F2EB</color>
+    <color name="ocean_surface_light">#F2EAE0</color>
+    <color name="ocean_on_surface">#1A1C1E</color>
+
+    <!-- Forest legacy colors mapped to coastal for compatibility -->
+    <color name="forest_primary">#1A4D6E</color>
+    <color name="forest_surface_light">#F5F2EB</color>
 </resources>

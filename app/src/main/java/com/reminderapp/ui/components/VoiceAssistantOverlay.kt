@@ -21,7 +21,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -45,27 +44,23 @@ fun VoiceAssistantOverlay(
         if (granted) viewModel.startVoiceInput()
     }
 
-    // Start listening once on open
     LaunchedEffect(Unit) {
         micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
 
-    // Handle incoming speech results
     LaunchedEffect(speechState) {
         when (val state = speechState) {
             is SpeechState.PartialResult -> {
                 currentPartialText = state.text
             }
             is SpeechState.Result -> {
-                // Append final result to session and auto-restart to keep listening
                 if (state.text.isNotEmpty()) {
                     sessionText = if (sessionText.isEmpty()) state.text else "$sessionText ${state.text}"
                 }
                 currentPartialText = ""
-                viewModel.startVoiceInput() 
+                viewModel.startVoiceInput()
             }
             is SpeechState.Idle -> {
-                // If it goes idle (due to silence), restart if still on screen
                 viewModel.startVoiceInput()
             }
             else -> {}
@@ -79,101 +74,91 @@ fun VoiceAssistantOverlay(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color.Transparent, // Transparent to allow custom background
-        scrimColor = Color.Black.copy(alpha = 0.32f),
+        containerColor = Color.Transparent,
+        scrimColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
         dragHandle = null
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(topStart = 40.dp, topEnd = 40.dp))
+                .clip(RoundedCornerShape(topStart = 48.dp, topEnd = 48.dp))
                 .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-                            MaterialTheme.colorScheme.surface
-                        )
-                    )
+                    Brush.verticalGradient(colors = listOf(
+                        MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                        MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
+                    ))
                 )
-                .padding(bottom = 48.dp)
+                .padding(bottom = 56.dp)
         ) {
-            // Animated Glowing Edge (Assistant vibe)
-            GlowingBorder()
+            GlowingBreatheBorder()
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
+                    .padding(28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(32.dp)
+                verticalArrangement = Arrangement.spacedBy(36.dp)
             ) {
-                // Drag Handle
                 Box(
                     modifier = Modifier
                         .size(40.dp, 4.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f))
                 )
 
-                // Assistant Breathing Icon
-                AssistantVisualizer(isListening = speechState is SpeechState.Listening || speechState is SpeechState.PartialResult)
+                AssistantVisualizer(
+                    isListening = speechState is SpeechState.Listening || speechState is SpeechState.PartialResult
+                )
 
-                // Transcription Text
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp)
-                ) {
-                    Text(
-                        text = if (displayText.isEmpty()) "How can I help?" else displayText,
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            lineHeight = 36.sp
-                        ),
-                        textAlign = TextAlign.Center,
-                        color = if (displayText.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f) 
-                                else MaterialTheme.colorScheme.onSurface
-                    )
-                }
+                GradientTextCard(
+                    text = if (displayText.isEmpty()) "How can I help?" else displayText,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)
+                )
 
-                // Controls
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Retry
                     FilledTonalIconButton(
                         onClick = { 
                             sessionText = ""
                             currentPartialText = ""
-                            viewModel.startVoiceInput() 
+                            viewModel.startVoiceInput()
                         },
                         modifier = Modifier.size(56.dp),
-                        shape = CircleShape
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                        )
                     ) {
                         Icon(Icons.Default.Refresh, contentDescription = "Retry")
                     }
 
-                    // Confirm / Done
                     Button(
                         onClick = {
                             viewModel.stopVoiceInput()
                             if (displayText.isNotEmpty()) onResult(displayText) else onDismiss()
                         },
                         modifier = Modifier.weight(1f).height(56.dp),
-                        shape = RoundedCornerShape(28.dp),
-                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
+                        shape = RoundedCornerShape(32.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = Color.White
+                        )
                     ) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(14.dp))
                         Text("Confirm", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
 
-                    // Close
                     FilledTonalIconButton(
                         onClick = onDismiss,
                         modifier = Modifier.size(56.dp),
-                        shape = CircleShape
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                        )
                     ) {
                         Icon(Icons.Default.Close, contentDescription = "Cancel")
                     }
@@ -184,71 +169,13 @@ fun VoiceAssistantOverlay(
 }
 
 @Composable
-fun AssistantVisualizer(isListening: Boolean) {
-    val infiniteTransition = rememberInfiniteTransition(label = "assistant")
-    
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (isListening) 1.2f else 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "scale"
-    )
-
-    Box(contentAlignment = Alignment.Center) {
-        // Multi-layered animated glow
-        if (isListening) {
-            listOf(Color(0xFF4285F4), Color(0xFFEA4335), Color(0xFFFBBC05), Color(0xFF34A853)).forEachIndexed { index, color ->
-                val rotation by infiniteTransition.animateFloat(
-                    initialValue = 0f,
-                    targetValue = 360f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(3000 + (index * 500), easing = LinearEasing)
-                    ),
-                    label = "rotate"
-                )
-                
-                Box(
-                    modifier = Modifier
-                        .size(90.dp)
-                        .scale(scale * (1f - (index * 0.1f)))
-                        .blur(20.dp)
-                        .clip(CircleShape)
-                        .background(color.copy(alpha = 0.15f))
-                )
-            }
-        }
-
-        // Primary Mic Button
-        Surface(
-            modifier = Modifier.size(72.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primary,
-            tonalElevation = 8.dp,
-            shadowElevation = 12.dp
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Default.Mic,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun GlowingBorder() {
-    val infiniteTransition = rememberInfiniteTransition(label = "glow")
+fun GlowingBreatheBorder() {
+    val infiniteTransition = rememberInfiniteTransition(label = "breathe_border")
     val xOffset by infiniteTransition.animateFloat(
         initialValue = -100f,
         targetValue = 100f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
+            animation = tween(2500, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "x"
@@ -257,17 +184,105 @@ fun GlowingBorder() {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(2.dp)
+            .height(3.dp)
             .background(
-                Brush.horizontalGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                        Color(0xFF4285F4).copy(alpha = 0.5f),
-                        Color(0xFF34A853).copy(alpha = 0.5f),
-                        Color.Transparent
-                    )
-                )
+                Brush.horizontalGradient(colors = listOf<Color>(
+                    Color.Transparent,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f),
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                    Color.Transparent
+                ))
             )
     )
+}
+
+@Composable
+fun AssistantVisualizer(isListening: Boolean) {
+    val infiniteTransition = rememberInfiniteTransition(label = "assistant")
+    
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (isListening) 1.25f else 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+
+    Box(contentAlignment = Alignment.Center) {
+        if (isListening) {
+            val secondary = MaterialTheme.colorScheme.secondary
+            val primary = MaterialTheme.colorScheme.primary
+            listOf(
+                secondary.copy(alpha = 0.2f),
+                primary.copy(alpha = 0.18f),
+                secondary.copy(alpha = 0.4f)
+            ).forEachIndexed { index, color ->
+                val rotation by infiniteTransition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 360f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(4500 + (index * 1000), easing = LinearEasing)
+                    ),
+                    label = "rotate"
+                )
+                
+                Box(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .scale(scale * (1f - (index * 0.12f)))
+                        .blur(24.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .size(76.dp)
+                .clip(CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                tonalElevation = 10.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun GradientTextCard(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.onSurface
+) {
+    Card(
+        modifier = modifier.fillMaxWidth().padding(vertical = 16.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+        )
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.headlineSmall.copy(
+                fontWeight = FontWeight.SemiBold
+            ),
+            color = color,
+            modifier = Modifier.padding(16.dp)
+        )
+    }
 }

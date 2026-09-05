@@ -22,8 +22,41 @@ class NaturalLanguageParser @Inject constructor() {
         // Try recurring patterns first
         parseRecurring(normalized, input)?.let { return it }
 
+        // Try relative time patterns e.g. "in 10 minutes"
+        parseRelative(normalized, input)?.let { return it }
+
         // Try one-time patterns
         return parseOneTime(normalized, input)
+    }
+
+    // ─── Relative Patterns ───────────────────────────────────────────────────
+
+    private fun parseRelative(normalized: String, original: String): ReminderParseResult? {
+        val relativePattern = Regex("""\bin (\d+)\s*(minute|min|hour|hr|day)s?\b""")
+        relativePattern.find(normalized)?.let { match ->
+            val value = match.groupValues[1].toLongOrNull() ?: return@let
+            val unit = match.groupValues[2]
+            
+            val now = LocalDateTime.now()
+            val dateTime = when {
+                unit.startsWith("min") -> now.plusMinutes(value)
+                unit.startsWith("hour") || unit.startsWith("hr") -> now.plusHours(value)
+                unit.startsWith("day") -> now.plusDays(value)
+                else -> return@let
+            }
+
+            val title = extractTitle(normalized, match.value, original)
+            
+            return ReminderParseResult(
+                title = title,
+                dateTime = dateTime,
+                recurrenceType = RecurrenceType.NONE,
+                reminderType = ReminderType.ONE_TIME,
+                confidence = 1.0f,
+                rawInput = original
+            )
+        }
+        return null
     }
 
     // ─── Recurring Patterns ───────────────────────────────────────────────────
@@ -225,6 +258,16 @@ class NaturalLanguageParser @Inject constructor() {
             return LocalTime.of(hour.coerceIn(0, 23), minute.coerceIn(0, 59))
         }
 
+        // HH:MM (24-hour format or just without am/pm)
+        val plainTimeRegex = Regex("""\b(\d{1,2}):(\d{2})\b""")
+        plainTimeRegex.find(normalized)?.let { match ->
+            val hour = match.groupValues[1].toInt()
+            val minute = match.groupValues[2].toInt()
+            if (hour in 0..23 && minute in 0..59) {
+                return LocalTime.of(hour, minute)
+            }
+        }
+
         // H am/pm (flexible spaces and dots)
         val shortTimeRegex = Regex("""(\d{1,2})\s*([ap]\.?m\.?)""", RegexOption.IGNORE_CASE)
         shortTimeRegex.find(normalized)?.let { match ->
@@ -258,9 +301,11 @@ class NaturalLanguageParser @Inject constructor() {
 
     private val dateTimeFillerPatterns = listOf(
         Regex("""\b\d{1,2}:\d{2}\s*([ap]\.?m\.?)\b""", RegexOption.IGNORE_CASE),
+        Regex("""\b\d{1,2}:\d{2}\b""", RegexOption.IGNORE_CASE),
         Regex("""\b\d{1,2}\s*([ap]\.?m\.?)\b""", RegexOption.IGNORE_CASE),
         Regex("""\bnoon\b""", RegexOption.IGNORE_CASE),
         Regex("""\bmidnight\b""", RegexOption.IGNORE_CASE),
+        Regex("""\bin \d+\s*(minute|min|hour|hr|day)s?\b""", RegexOption.IGNORE_CASE),
         Regex("""\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b""", RegexOption.IGNORE_CASE),
         Regex("""\bnext week\b""", RegexOption.IGNORE_CASE),
         Regex("""\btoday\b""", RegexOption.IGNORE_CASE),

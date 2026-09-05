@@ -1,12 +1,10 @@
 package com.reminderapp.ui.components
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -15,200 +13,239 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.reminderapp.domain.model.*
-import com.reminderapp.ui.theme.MutedAmber
-import com.reminderapp.ui.theme.MutedAmberContainer
-import com.reminderapp.ui.theme.MutedAmberContainerDark
-import com.reminderapp.ui.theme.MutedAmberDark
+import java.time.Duration
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ReminderCard(
     reminder: Reminder,
     onTap: () -> Unit,
     onMarkComplete: (() -> Unit)?,
     onDelete: () -> Unit,
-    onEdit: (() -> Unit)?
+    onEdit: (() -> Unit)?,
+    onSnooze: (() -> Unit)? = null
 ) {
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    val timeFormatter = DateTimeFormatter.ofPattern("hh:mm a")
-    val dateFormatter = DateTimeFormatter.ofPattern("MMM dd, yyyy")
-
+    var showMenu by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
+    
     val isCompleted = reminder.status == ReminderStatus.COMPLETED
     val isMissed = reminder.status == ReminderStatus.MISSED
-
-    val isDark = isSystemInDarkTheme()
-
-    val containerColor = when {
-        isCompleted -> MaterialTheme.colorScheme.tertiaryContainer
-        isMissed -> if (isDark) MutedAmberContainerDark else MutedAmberContainer
-        else -> MaterialTheme.colorScheme.surface
+    
+    val (dateTimeText, relativeTimeText) = remember(reminder.reminderDateTime, reminder.status) {
+        formatReminderDateTime(reminder.reminderDateTime, reminder.status)
     }
 
     val accentColor = when {
-        isCompleted -> MaterialTheme.colorScheme.onTertiaryContainer
-        isMissed -> if (isDark) MutedAmberDark else MutedAmber
+        isCompleted -> Color(0xFF3F7656)
+        isMissed -> Color(0xFFB65C5C)
         else -> MaterialTheme.colorScheme.primary
     }
+    
+    val onContainerColor = MaterialTheme.colorScheme.onSurface
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp)
-            .clickable(onClick = onTap),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isCompleted || isMissed) 0.dp else 2.dp)
-    ) {
-        Row(
+    Box {
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(IntrinsicSize.Min),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(vertical = 4.dp)
+                .combinedClickable(
+                    onClick = onTap,
+                    onLongClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showMenu = true
+                    }
+                ),
+            shape = MaterialTheme.shapes.large,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
-            // Left accent border
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(4.dp)
-                    .background(accentColor)
-            )
-
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Status indicator / complete button
-                if (onMarkComplete != null && !isCompleted) {
-                    IconButton(
-                        onClick = onMarkComplete,
-                        modifier = Modifier.size(32.dp)
-                    ) {
+                // Status indicator
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isCompleted || isMissed) accentColor.copy(alpha = 0.1f)
+                            else Color.Transparent
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isCompleted) {
                         Icon(
-                            imageVector = if (isMissed) Icons.Default.PriorityHigh
-                            else Icons.Outlined.RadioButtonUnchecked,
-                            contentDescription = if (isMissed) "Missed reminder" else "Mark complete",
-                            tint = accentColor
-                        )
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(accentColor.copy(alpha = 0.1f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isCompleted) Icons.Default.Check else Icons.Default.PriorityHigh,
-                            contentDescription = null,
+                            Icons.Default.Check,
+                            contentDescription = "Completed",
                             tint = accentColor,
                             modifier = Modifier.size(16.dp)
                         )
+                    } else if (isMissed) {
+                        Icon(
+                            Icons.Default.PriorityHigh,
+                            contentDescription = "Missed",
+                            tint = accentColor,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    } else {
+                        IconButton(
+                            onClick = { onMarkComplete?.invoke() },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.RadioButtonUnchecked,
+                                contentDescription = "Mark complete",
+                                tint = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                 }
 
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(16.dp))
 
                 // Content
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = reminder.title,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
+                        ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None,
-                        color = if (isCompleted) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        else MaterialTheme.colorScheme.onSurface
+                        color = if (isCompleted) onContainerColor.copy(alpha = 0.5f) else onContainerColor
                     )
 
-                    if (reminder.description.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+
+                    Text(
+                        text = dateTimeText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isMissed) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (relativeTimeText != null && !isCompleted) {
                         Text(
-                            text = reminder.description,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            text = relativeTimeText,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 12.sp
+                            ),
+                            color = if (isMissed) accentColor else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 2.dp)
                         )
                     }
-
-                    Row(
-                        modifier = Modifier.padding(top = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Schedule,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = if (isMissed) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "${reminder.reminderDateTime.format(dateFormatter)} · ${reminder.reminderDateTime.format(timeFormatter)}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (isMissed) accentColor
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
-                        if (reminder.recurrenceType != RecurrenceType.NONE) {
-                            Icon(
-                                imageVector = Icons.Default.Repeat,
-                                contentDescription = "Recurring",
-                                modifier = Modifier.size(14.dp),
-                                tint = accentColor
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Actions
-            Row {
-                if (onEdit != null) {
-                    IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
-                        Icon(
-                            Icons.Default.Edit,
-                            contentDescription = "Edit",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                IconButton(
-                    onClick = { showDeleteDialog = true },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         }
-    }
 
-    if (showDeleteDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete Reminder") },
-            text = { Text("Delete \"${reminder.title}\"? This cannot be undone.") },
-            confirmButton = {
-                TextButton(onClick = { onDelete(); showDeleteDialog = false }) {
-                    Text("Delete", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+        DropdownMenu(
+            expanded = showMenu,
+            onDismissRequest = { showMenu = false },
+            modifier = Modifier.background(MaterialTheme.colorScheme.surface)
+        ) {
+            if (!isCompleted && onMarkComplete != null) {
+                DropdownMenuItem(
+                    text = { Text("Mark Complete") },
+                    onClick = {
+                        onMarkComplete()
+                        showMenu = false
+                    },
+                    leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) }
+                )
             }
-        )
+            if (!isCompleted && onSnooze != null) {
+                DropdownMenuItem(
+                    text = { Text("Snooze") },
+                    onClick = {
+                        onSnooze()
+                        showMenu = false
+                    },
+                    leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null) }
+                )
+            }
+            if (onEdit != null) {
+                DropdownMenuItem(
+                    text = { Text("Edit") },
+                    onClick = {
+                        onEdit()
+                        showMenu = false
+                    },
+                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) }
+                )
+            }
+            DropdownMenuItem(
+                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    onDelete()
+                    showMenu = false
+                },
+                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+            )
+        }
     }
+}
+
+private fun formatReminderDateTime(dateTime: LocalDateTime, status: ReminderStatus): Pair<String, String?> {
+    val now = LocalDateTime.now()
+    val today = now.toLocalDate()
+    val reminderDate = dateTime.toLocalDate()
+    
+    val timeFormatter = DateTimeFormatter.ofPattern("h:mm a")
+    val timeText = dateTime.format(timeFormatter)
+    
+    val dateText = when {
+        reminderDate == today -> "Today"
+        reminderDate == today.plusDays(1) -> "Tomorrow"
+        reminderDate == today.minusDays(1) -> "Yesterday"
+        reminderDate.year == today.year -> dateTime.format(DateTimeFormatter.ofPattern("EEE · MMM d"))
+        else -> dateTime.format(DateTimeFormatter.ofPattern("MMM d, yyyy"))
+    }
+    
+    val mainText = "$dateText · $timeText"
+    
+    var relativeText: String? = null
+    if (status == ReminderStatus.ACTIVE) {
+        val duration = Duration.between(now, dateTime)
+        val minutes = duration.toMinutes()
+        
+        relativeText = when {
+            minutes < 0 -> null
+            minutes < 60 -> "in $minutes min"
+            minutes < 1440 -> {
+                val hours = minutes / 60
+                val remainingMinutes = minutes % 60
+                if (remainingMinutes > 0) "in ${hours}h ${remainingMinutes}m" else "in ${hours}h"
+            }
+            else -> {
+                val days = minutes / 1440
+                "in $days days"
+            }
+        }
+    } else if (status == ReminderStatus.MISSED) {
+        val duration = Duration.between(dateTime, now)
+        val minutes = duration.toMinutes()
+        relativeText = when {
+            minutes < 60 -> "Missed $minutes min ago"
+            minutes < 1440 -> "Missed ${minutes / 60}h ago"
+            else -> "Missed ${minutes / 1440}d ago"
+        }
+    }
+    
+    return Pair(mainText, relativeText)
 }

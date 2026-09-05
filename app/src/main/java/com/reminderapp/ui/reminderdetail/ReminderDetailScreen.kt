@@ -1,8 +1,6 @@
 package com.reminderapp.ui.reminderdetail
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -10,6 +8,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -18,8 +17,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reminderapp.data.repository.ReminderRepository
 import com.reminderapp.domain.model.*
 import com.reminderapp.scheduler.ReminderScheduler
-import com.reminderapp.ui.theme.MutedAmberContainer
-import com.reminderapp.ui.theme.MutedAmberContainerDark
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -110,8 +107,8 @@ fun ReminderDetailScreen(
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 // Status badge
                 AssistChip(
@@ -122,7 +119,7 @@ fun ReminderDetailScreen(
                             when (r.status) {
                                 ReminderStatus.ACTIVE -> Icons.Outlined.RadioButtonUnchecked
                                 ReminderStatus.COMPLETED -> Icons.Default.CheckCircle
-                                ReminderStatus.MISSED -> Icons.Default.Warning
+                                ReminderStatus.MISSED -> Icons.Default.PriorityHigh
                             },
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
@@ -131,11 +128,13 @@ fun ReminderDetailScreen(
                     colors = AssistChipDefaults.assistChipColors(
                         containerColor = when (r.status) {
                             ReminderStatus.ACTIVE -> MaterialTheme.colorScheme.primaryContainer
-                            ReminderStatus.COMPLETED -> MaterialTheme.colorScheme.tertiaryContainer
-                            // Amber, not red: red is reserved for destructive actions (Delete) -
-                            // "missed" elsewhere in the app (ReminderCard, section headers) uses
-                            // the same amber language, so this chip now matches.
-                            ReminderStatus.MISSED -> if (isSystemInDarkTheme()) MutedAmberContainerDark else MutedAmberContainer
+                            ReminderStatus.COMPLETED -> MaterialTheme.colorScheme.surfaceVariant
+                            ReminderStatus.MISSED -> MaterialTheme.colorScheme.errorContainer
+                        },
+                        labelColor = when (r.status) {
+                            ReminderStatus.ACTIVE -> MaterialTheme.colorScheme.onPrimaryContainer
+                            ReminderStatus.COMPLETED -> MaterialTheme.colorScheme.onSurfaceVariant
+                            ReminderStatus.MISSED -> MaterialTheme.colorScheme.onErrorContainer
                         }
                     )
                 )
@@ -143,7 +142,9 @@ fun ReminderDetailScreen(
                 // Title
                 Text(
                     text = r.title,
-                    style = MaterialTheme.typography.headlineSmall
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 // Description
@@ -155,11 +156,14 @@ fun ReminderDetailScreen(
                     )
                 }
 
-                HorizontalDivider()
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                )
 
                 // Details
                 DetailRow(
-                    icon = Icons.Default.CalendarMonth,
+                    icon = Icons.Default.CalendarToday,
                     label = "Date",
                     value = r.reminderDateTime.format(dateFormatter)
                 )
@@ -192,11 +196,12 @@ fun ReminderDetailScreen(
                 if (r.status == ReminderStatus.ACTIVE || r.status == ReminderStatus.MISSED) {
                     Button(
                         onClick = { viewModel.markComplete() },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = MaterialTheme.shapes.medium
                     ) {
                         Icon(Icons.Default.Check, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Mark as Complete")
+                        Spacer(Modifier.width(12.dp))
+                        Text("Mark as Complete", style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }
@@ -234,23 +239,32 @@ private fun DetailRow(
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(24.dp)
-        )
+        Surface(
+            modifier = Modifier.size(48.dp),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
         Column {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
                 text = value,
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }

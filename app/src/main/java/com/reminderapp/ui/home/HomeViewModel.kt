@@ -41,7 +41,7 @@ class HomeViewModel @Inject constructor(
         val now = LocalDateTime.now()
 
         combine(
-            repository.getUpcomingReminders(now, 3),
+            repository.getAllUpcomingReminders(now),
             repository.getCompletedReminders(),
             repository.getMissedReminders(),
             repository.getCompletedCount(),
@@ -91,6 +91,18 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             scheduler.cancel(reminderId)
             repository.deleteReminder(reminderId)
+        }
+    }
+
+    fun snoozeReminder(reminderId: Long, minutes: Int) {
+        viewModelScope.launch {
+            scheduler.snooze(reminderId, minutes)
+        }
+    }
+
+    fun snoozeReminder(reminderId: Long, dateTime: LocalDateTime) {
+        viewModelScope.launch {
+            scheduler.snooze(reminderId, dateTime)
         }
     }
 }

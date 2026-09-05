@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Background with warm sunrise gradient -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#FFFCF5"
+                android:centerColor="#FFF7E6"
+                android:endColor="#FFEED0"
+                android:angle="135" />
+        </shape>
+    </item>
+</layer-list>

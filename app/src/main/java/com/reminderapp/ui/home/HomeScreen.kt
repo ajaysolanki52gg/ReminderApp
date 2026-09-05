@@ -1,11 +1,11 @@
 package com.reminderapp.ui.home
 
 import androidx.compose.animation.*
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -13,16 +13,19 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reminderapp.domain.model.Reminder
 import com.reminderapp.ui.components.AssistantInputBar
 import com.reminderapp.ui.components.ReminderCard
 import com.reminderapp.ui.components.SectionHeader
-import com.reminderapp.ui.theme.MutedAmber
-import com.reminderapp.ui.theme.MutedAmberDark
+import com.reminderapp.ui.components.SnoozeSelector
+import java.time.LocalDateTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,83 +39,31 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showAssistantBar by remember { mutableStateOf(false) }
     var openWithVoice by remember { mutableStateOf(false) }
-    var showAllMissed by remember { mutableStateOf(false) }
+    var showActionMenu by remember { mutableStateOf(false) }
+    var snoozeReminder by remember { mutableStateOf<Reminder?>(null) }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Reminders",
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                },
-                actions = {
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        },
+        containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
-            // Hide FABs when Assistant is open to avoid congestion
             AnimatedVisibility(
                 visible = !showAssistantBar,
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut()
             ) {
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.imePadding()
+                FloatingActionButton(
+                    onClick = { showActionMenu = true },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier
+                        .size(64.dp)
+                        .imePadding()
                 ) {
-                    // 1. Mic FAB (Speak First) - Top of Triangle
-                    FloatingActionButton(
-                        onClick = {
-                            openWithVoice = true
-                            showAssistantBar = true
-                        },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = Color.White,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.size(56.dp)
-                    ) {
-                        Icon(Icons.Default.Mic, contentDescription = "Speak", modifier = Modifier.size(28.dp))
-                    }
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        // 2. Assistant / Bot FAB
-                        FloatingActionButton(
-                            onClick = {
-                                openWithVoice = false
-                                showAssistantBar = true
-                            },
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = "Assistant")
-                        }
-
-                        // 3. Add reminder FAB (+)
-                        FloatingActionButton(
-                            onClick = onNavigateToAddReminder,
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            shape = RoundedCornerShape(16.dp),
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = "Add Reminder")
-                        }
-                    }
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "Add",
+                        modifier = Modifier.size(32.dp)
+                    )
                 }
             }
         }
@@ -123,132 +74,80 @@ fun HomeScreen(
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        start = 16.dp,
-                        end = 16.dp,
-                        top = 8.dp,
-                        bottom = if (showAssistantBar) 240.dp else 140.dp
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp)
                 ) {
-                    // ─── Upcoming Section ──────────────────────────────────────
-                    item {
-                        SectionHeader(
+                    HomeHeader(onSettingsClick = onNavigateToSettings)
+                    
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ReminderSection(
                             title = "Upcoming",
-                            count = uiState.upcomingReminders.size,
+                            reminders = uiState.upcomingReminders,
                             isExpanded = true,
-                            onToggle = null // Always expanded on home
+                            onToggle = null,
+                            onNavigateToDetail = onNavigateToDetail,
+                            onMarkComplete = { viewModel.markComplete(it) },
+                            onDelete = { viewModel.deleteReminder(it) },
+                            onEdit = { onNavigateToEditReminder(it) },
+                            onSnooze = { snoozeReminder = it }
                         )
-                    }
 
-                    if (uiState.upcomingReminders.isEmpty()) {
-                        item {
-                            EmptyState(
-                                message = "🌱 Nothing planned yet",
-                                subMessage = "Tap + to create your first reminder"
-                            )
-                        }
-                    } else {
-                        items(
-                            items = uiState.upcomingReminders,
-                            key = { it.id }
-                        ) { reminder ->
-                            ReminderCard(
-                                reminder = reminder,
-                                onTap = { onNavigateToDetail(reminder.id) },
-                                onMarkComplete = { viewModel.markComplete(reminder.id) },
-                                onDelete = { viewModel.deleteReminder(reminder.id) },
-                                onEdit = { onNavigateToEditReminder(reminder.id) }
-                            )
-                        }
-                    }
-
-                    item { Spacer(Modifier.height(16.dp)) }
-
-                    // ─── Completed Section ─────────────────────────────────────
-                    item {
-                        SectionHeader(
+                        ReminderSection(
                             title = "Completed",
-                            count = uiState.completedCount,
+                            reminders = uiState.completedReminders,
                             isExpanded = uiState.isCompletedExpanded,
                             onToggle = { viewModel.toggleCompletedExpanded() },
-                            dotColor = MaterialTheme.colorScheme.tertiary
+                            onNavigateToDetail = onNavigateToDetail,
+                            onMarkComplete = null,
+                            onDelete = { viewModel.deleteReminder(it) },
+                            onEdit = null,
+                            onSnooze = null
                         )
-                    }
 
-                    if (uiState.isCompletedExpanded) {
-                        if (uiState.completedReminders.isEmpty()) {
-                            item {
-                                EmptyState(
-                                    message = "✨ You're all caught up",
-                                    subMessage = ""
-                                )
-                            }
-                        } else {
-                            items(
-                                items = uiState.completedReminders.take(10),
-                                key = { "completed_${it.id}" }
-                            ) { reminder ->
-                                ReminderCard(
-                                    reminder = reminder,
-                                    onTap = { onNavigateToDetail(reminder.id) },
-                                    onMarkComplete = null,
-                                    onDelete = { viewModel.deleteReminder(reminder.id) },
-                                    onEdit = null
-                                )
-                            }
-                        }
-                    }
-
-                    item { Spacer(Modifier.height(8.dp)) }
-
-                    // ─── Missed Section ────────────────────────────────────────
-                    item {
-                        SectionHeader(
+                        ReminderSection(
                             title = "Missed",
-                            count = uiState.missedCount,
+                            reminders = uiState.missedReminders,
                             isExpanded = uiState.isMissedExpanded,
                             onToggle = { viewModel.toggleMissedExpanded() },
-                            dotColor = if (isSystemInDarkTheme()) MutedAmberDark else MutedAmber
+                            onNavigateToDetail = onNavigateToDetail,
+                            onMarkComplete = { viewModel.markComplete(it) },
+                            onDelete = { viewModel.deleteReminder(it) },
+                            onEdit = { onNavigateToEditReminder(it) },
+                            onSnooze = { snoozeReminder = it }
                         )
-                    }
-
-                    if (uiState.isMissedExpanded) {
-                        if (uiState.missedReminders.isEmpty()) {
-                            item {
-                                EmptyState(
-                                    message = "All clear",
-                                    subMessage = "No missed reminders"
-                                )
-                            }
-                        } else {
-                            items(
-                                items = if (showAllMissed) uiState.missedReminders else uiState.missedReminders.take(10),
-                                key = { "missed_${it.id}" }
-                            ) { reminder ->
-                                ReminderCard(
-                                    reminder = reminder,
-                                    onTap = { onNavigateToDetail(reminder.id) },
-                                    onMarkComplete = { viewModel.markComplete(reminder.id) },
-                                    onDelete = { viewModel.deleteReminder(reminder.id) },
-                                    onEdit = { onNavigateToEditReminder(reminder.id) }
-                                )
-                            }
-                            if (!showAllMissed && uiState.missedCount > 10) {
-                                item {
-                                    TextButton(onClick = { showAllMissed = true }) {
-                                        Text("See All (${uiState.missedCount})")
-                                    }
-                                }
-                            }
-                        }
+                        
+                        Spacer(Modifier.height(120.dp))
                     }
                 }
             }
 
-            // ─── Assistant Input Bar ───────────────────────────────────────────
+            if (showActionMenu) {
+                ActionSelectionMenu(
+                    onDismiss = { showActionMenu = false },
+                    onCreateManual = {
+                        onNavigateToAddReminder()
+                        showActionMenu = false
+                    },
+                    onCreateAI = {
+                        openWithVoice = false
+                        showAssistantBar = true
+                        showActionMenu = false
+                    },
+                    onCreateVoice = {
+                        openWithVoice = true
+                        showAssistantBar = true
+                        showActionMenu = false
+                    }
+                )
+            }
+
             AnimatedVisibility(
                 visible = showAssistantBar,
                 modifier = Modifier.align(Alignment.BottomCenter),
@@ -261,33 +160,309 @@ fun HomeScreen(
                     initialListening = openWithVoice
                 )
             }
+            
+            if (snoozeReminder != null) {
+                ModalBottomSheet(
+                    onDismissRequest = { snoozeReminder = null },
+                    shape = MaterialTheme.shapes.extraLarge
+                ) {
+                    SnoozeSelector(
+                        title = snoozeReminder?.title ?: "",
+                        onSnoozeMinutes = { mins ->
+                            snoozeReminder?.let { viewModel.snoozeReminder(it.id, mins) }
+                            snoozeReminder = null
+                        },
+                        onSnoozeDateTime = { dateTime ->
+                            snoozeReminder?.let { viewModel.snoozeReminder(it.id, dateTime) }
+                            snoozeReminder = null
+                        },
+                        onCancel = { snoozeReminder = null }
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun EmptyState(
-    message: String,
-    subMessage: String = ""
+private fun HomeHeader(onSettingsClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 24.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Reminders",
+                style = MaterialTheme.typography.headlineLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            IconButton(
+                onClick = onSettingsClick,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            ) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Text(
+            text = "Stay on top of what's important",
+            style = MaterialTheme.typography.bodySmall.copy(
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            ),
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ReminderSection(
+    title: String,
+    reminders: List<Reminder>,
+    isExpanded: Boolean,
+    onToggle: (() -> Unit)?,
+    onNavigateToDetail: (Long) -> Unit,
+    onMarkComplete: ((Long) -> Unit)?,
+    onDelete: (Long) -> Unit,
+    onEdit: ((Long) -> Unit)?,
+    onSnooze: ((Reminder) -> Unit)?
 ) {
+    Column {
+        SectionHeader(
+            title = title,
+            count = reminders.size,
+            isExpanded = isExpanded,
+            onToggle = onToggle
+        )
+
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            if (reminders.isEmpty()) {
+                EmptyState(title = title)
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                ) {
+                    reminders.forEach { reminder ->
+                        SwipeableReminderItem(
+                            reminder = reminder,
+                            onTap = { onNavigateToDetail(reminder.id) },
+                            onMarkComplete = if (onMarkComplete != null) { { onMarkComplete(reminder.id) } } else null,
+                            onDelete = { onDelete(reminder.id) },
+                            onEdit = if (onEdit != null) { { onEdit(reminder.id) } } else null,
+                            onSnooze = if (onSnooze != null) { { onSnooze(reminder) } } else null
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeableReminderItem(
+    reminder: Reminder,
+    onTap: () -> Unit,
+    onMarkComplete: (() -> Unit)?,
+    onDelete: () -> Unit,
+    onEdit: (() -> Unit)?,
+    onSnooze: (() -> Unit)?
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            when (value) {
+                SwipeToDismissBoxValue.StartToEnd -> {
+                    onSnooze?.invoke()
+                    false
+                }
+                SwipeToDismissBoxValue.EndToStart -> {
+                    if (onMarkComplete != null) {
+                        onMarkComplete()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                else -> false
+            }
+        }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            val color = when (dismissState.dismissDirection) {
+                SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primary
+                SwipeToDismissBoxValue.EndToStart -> Color(0xFF3F7656) // AppCompleted
+                else -> Color.Transparent
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(MaterialTheme.shapes.large)
+                    .background(color)
+                    .padding(horizontal = 20.dp),
+                contentAlignment = if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd)
+                    Alignment.CenterStart else Alignment.CenterEnd
+            ) {
+                Icon(
+                    imageVector = if (dismissState.dismissDirection == SwipeToDismissBoxValue.StartToEnd)
+                        Icons.Default.Schedule else Icons.Default.Check,
+                    contentDescription = null,
+                    tint = Color.White
+                )
+            }
+        },
+        content = {
+            ReminderCard(
+                reminder = reminder,
+                onTap = onTap,
+                onMarkComplete = onMarkComplete,
+                onDelete = onDelete,
+                onEdit = onEdit,
+                onSnooze = onSnooze
+            )
+        }
+    )
+}
+
+@Composable
+private fun EmptyState(title: String) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        val icon = when (title) {
+            "Upcoming" -> "✦"
+            "Completed" -> "✨"
+            else -> "🎉"
+        }
+        val message = when (title) {
+            "Upcoming" -> "Nothing coming up"
+            "Completed" -> "No completed reminders"
+            else -> "Nothing missed"
+        }
+        val subMessage = when (title) {
+            "Upcoming" -> "You're all caught up"
+            else -> ""
+        }
+        
+        Text(
+            text = icon,
+            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        )
         Text(
             text = message,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            modifier = Modifier.padding(top = 8.dp)
         )
         if (subMessage.isNotEmpty()) {
             Text(
                 text = subMessage,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ActionSelectionMenu(
+    onDismiss: () -> Unit,
+    onCreateManual: () -> Unit,
+    onCreateAI: () -> Unit,
+    onCreateVoice: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = MaterialTheme.shapes.extraLarge,
+        containerColor = MaterialTheme.colorScheme.surface
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                text = "What would you like to do?",
+                style = MaterialTheme.typography.headlineMedium,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            ActionMenuItem(
+                icon = Icons.Default.Add,
+                title = "Create reminder",
+                onClick = onCreateManual
+            )
+            ActionMenuItem(
+                icon = Icons.Default.AutoAwesome,
+                title = "Create with AI",
+                onClick = onCreateAI,
+                iconColor = MaterialTheme.colorScheme.secondary
+            )
+            ActionMenuItem(
+                icon = Icons.Default.Mic,
+                title = "Create by voice",
+                onClick = onCreateVoice,
+                iconColor = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActionMenuItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    onClick: () -> Unit,
+    iconColor: Color = MaterialTheme.colorScheme.onSurface
+) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(16.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
             )
         }
     }
