@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.reminderapp.data.repository.ReminderRepository
+import com.reminderapp.domain.model.RecurrenceType
 import com.reminderapp.domain.model.ReminderStatus
 import com.reminderapp.scheduler.ReminderScheduler
 import dagger.hilt.android.AndroidEntryPoint
@@ -25,15 +26,21 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
         when (intent.action) {
             NotificationHelper.ACTION_COMPLETE -> {
-                CoroutineScope(Dispatchers.IO).launch {
-                    repository.updateStatus(reminderId, ReminderStatus.COMPLETED)
-                    // Without this, completing a recurring reminder from the plain notification's
-                    // "Complete" action (as opposed to the full-screen AlarmActivity) never
-                    // scheduled the next occurrence at all - it just stopped recurring silently.
-                    val reminder = repository.getReminderById(reminderId)
-                    reminder?.let { scheduler.rescheduleRecurring(it) }
-                }
                 notificationHelper.cancelNotification(reminderId)
+                val pending = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val reminder = repository.getReminderById(reminderId) ?: return@launch
+                        // A recurring reminder was already advanced to (and scheduled for) its
+                        // next occurrence when this notification fired. Marking it COMPLETED or
+                        // advancing it again here would silently skip that next occurrence.
+                        if (reminder.recurrenceType == RecurrenceType.NONE) {
+                            repository.updateStatus(reminderId, ReminderStatus.COMPLETED)
+                        }
+                    } finally {
+                        pending.finish()
+                    }
+                }
             }
         }
     }

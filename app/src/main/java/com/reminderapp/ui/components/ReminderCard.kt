@@ -1,5 +1,6 @@
 package com.reminderapp.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -22,9 +23,36 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.reminderapp.domain.model.*
+import com.reminderapp.ui.theme.StatusColors
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+
+@Composable
+private fun MetaBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String?) {
+    Row(
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = label ?: "Alarm",
+            modifier = Modifier.size(12.dp),
+            tint = MaterialTheme.colorScheme.onSecondaryContainer
+        )
+        if (label != null) {
+            Spacer(Modifier.width(3.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                color = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -47,18 +75,19 @@ fun ReminderCard(
     }
 
     val accentColor = when {
-        isCompleted -> Color(0xFF3F7656)
-        isMissed -> Color(0xFFB65C5C)
+        isCompleted -> StatusColors.completed
+        isMissed -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.primary
     }
-    
+
     val onContainerColor = MaterialTheme.colorScheme.onSurface
 
     Box {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp)
+                .padding(vertical = 3.dp)
+                .clip(MaterialTheme.shapes.large)
                 .combinedClickable(
                     onClick = onTap,
                     onLongClick = {
@@ -67,56 +96,61 @@ fun ReminderCard(
                     }
                 ),
             shape = MaterialTheme.shapes.large,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+            colors = CardDefaults.cardColors(
+                containerColor = if (isCompleted) MaterialTheme.colorScheme.surfaceContainerLow
+                else MaterialTheme.colorScheme.surfaceContainerLowest
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Status indicator
+                // Status indicator / complete toggle
                 Box(
                     modifier = Modifier
-                        .size(24.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
                         .background(
-                            if (isCompleted || isMissed) accentColor.copy(alpha = 0.1f)
+                            if (isCompleted || isMissed) accentColor.copy(alpha = 0.14f)
                             else Color.Transparent
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (isCompleted) {
-                        Icon(
+                    when {
+                        isCompleted -> Icon(
                             Icons.Default.Check,
                             contentDescription = "Completed",
                             tint = accentColor,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
-                    } else if (isMissed) {
-                        Icon(
+                        isMissed -> Icon(
                             Icons.Default.PriorityHigh,
                             contentDescription = "Missed",
                             tint = accentColor,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
-                    } else {
-                        IconButton(
-                            onClick = { onMarkComplete?.invoke() },
-                            modifier = Modifier.size(24.dp)
+                        else -> IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onMarkComplete?.invoke()
+                            },
+                            modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
                                 Icons.Outlined.RadioButtonUnchecked,
                                 contentDescription = "Mark complete",
-                                tint = MaterialTheme.colorScheme.outline,
-                                modifier = Modifier.size(24.dp)
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(26.dp)
                             )
                         }
                     }
                 }
 
-                Spacer(Modifier.width(16.dp))
+                Spacer(Modifier.width(12.dp))
 
                 // Content
                 Column(modifier = Modifier.weight(1f)) {
@@ -126,28 +160,63 @@ fun ReminderCard(
                             fontWeight = FontWeight.SemiBold,
                             textDecoration = if (isCompleted) TextDecoration.LineThrough else TextDecoration.None
                         ),
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         color = if (isCompleted) onContainerColor.copy(alpha = 0.5f) else onContainerColor
                     )
 
                     Spacer(Modifier.height(4.dp))
 
-                    Text(
-                        text = dateTimeText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isMissed) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = dateTimeText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isMissed) accentColor else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (reminder.recurrenceType != RecurrenceType.NONE) {
+                            MetaBadge(
+                                icon = Icons.Default.Repeat,
+                                label = reminder.recurrenceLabel()
+                            )
+                        }
+                        if (reminder.notificationMode == NotificationMode.ALARM) {
+                            MetaBadge(icon = Icons.Default.Alarm, label = null)
+                        }
+                    }
 
-                    if (relativeTimeText != null && !isCompleted) {
+                    reminder.snoozedUntil?.let { until ->
+                        Text(
+                            text = "Snoozed until ${until.format(DateTimeFormatter.ofPattern("h:mm a"))}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+
+                    if (isMissed && relativeTimeText != null) {
                         Text(
                             text = relativeTimeText,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 12.sp
-                            ),
-                            color = if (isMissed) accentColor else MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = accentColor,
                             modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
+                }
+
+                if (!isCompleted && !isMissed && relativeTimeText != null) {
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = relativeTimeText,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         )
                     }
                 }
@@ -226,6 +295,7 @@ private fun formatReminderDateTime(dateTime: LocalDateTime, status: ReminderStat
         
         relativeText = when {
             minutes < 0 -> null
+            minutes < 1 -> "now"
             minutes < 60 -> "in $minutes min"
             minutes < 1440 -> {
                 val hours = minutes / 60
@@ -234,13 +304,14 @@ private fun formatReminderDateTime(dateTime: LocalDateTime, status: ReminderStat
             }
             else -> {
                 val days = minutes / 1440
-                "in $days days"
+                if (days == 1L) "in 1 day" else "in $days days"
             }
         }
     } else if (status == ReminderStatus.MISSED) {
         val duration = Duration.between(dateTime, now)
         val minutes = duration.toMinutes()
         relativeText = when {
+            minutes < 1 -> "Missed just now"
             minutes < 60 -> "Missed $minutes min ago"
             minutes < 1440 -> "Missed ${minutes / 60}h ago"
             else -> "Missed ${minutes / 1440}d ago"

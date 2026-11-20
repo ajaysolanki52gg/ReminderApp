@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.reminderapp.data.repository.SettingsRepository
 import com.reminderapp.domain.model.NotificationMode
+import com.reminderapp.speech.SpeechLanguages
 import com.reminderapp.util.BackupRestoreManager
 import com.reminderapp.util.requestAlarmReliabilityPermissionsIfNeeded
 import com.reminderapp.ui.components.MinutesInputDialog
@@ -38,6 +39,7 @@ import javax.inject.Inject
 data class SettingsUiState(
     val defaultNotificationMode: NotificationMode = NotificationMode.NOTIFICATION,
     val defaultSnoozeDuration: Int = 10,
+    val speechLanguage: String = SpeechLanguages.DEVICE_DEFAULT,
     val statusMessage: String? = null
 )
 
@@ -56,7 +58,8 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         defaultNotificationMode = settings.defaultNotificationMode,
-                        defaultSnoozeDuration = settings.defaultSnoozeDuration
+                        defaultSnoozeDuration = settings.defaultSnoozeDuration,
+                        speechLanguage = settings.speechLanguage
                     )
                 }
             }.launchIn(viewModelScope)
@@ -68,6 +71,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setDefaultSnooze(minutes: Int) {
         viewModelScope.launch { settingsRepository.setDefaultSnoozeDuration(minutes) }
+    }
+
+    fun setSpeechLanguage(languageTag: String) {
+        viewModelScope.launch { settingsRepository.setSpeechLanguage(languageTag) }
     }
 
     fun exportBackup(uri: Uri) {
@@ -206,6 +213,28 @@ fun SettingsScreen(
                         viewModel.setDefaultSnooze(minutes)
                     }
                 )
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Voice language", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Used when you create a reminder by speaking. English (India) is usually best if you speak English on this phone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    SpeechLanguages.options.chunked(2).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            row.forEach { (tag, label) ->
+                                FilterChip(
+                                    selected = uiState.speechLanguage == tag,
+                                    onClick = { viewModel.setSpeechLanguage(tag) },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(8.dp))

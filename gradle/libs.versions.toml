@@ -16,6 +16,7 @@ datastorePreferences = "1.1.1"
 gson = "2.11.0"
 material = "1.12.0"
 coreSplashScreen = "1.2.0"
+junit = "4.13.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -44,6 +45,7 @@ datastore-preferences = { group = "androidx.datastore", name = "datastore-prefer
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashScreen" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

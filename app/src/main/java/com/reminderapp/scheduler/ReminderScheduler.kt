@@ -12,11 +12,10 @@ import com.reminderapp.domain.model.NotificationMode
 import com.reminderapp.domain.model.Reminder
 import com.reminderapp.domain.model.RecurrenceType
 import com.reminderapp.domain.model.ReminderStatus
-import com.reminderapp.notification.ReminderNotificationWorker
+import com.reminderapp.domain.model.WeekDays
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.LocalDateTime
 import java.time.ZoneId
-import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,7 +33,7 @@ class ReminderScheduler @Inject constructor(
     }
 
     fun schedule(reminder: Reminder) {
-        val triggerMillis = reminder.reminderDateTime
+        val triggerMillis = reminder.nextTriggerTime
             .atZone(ZoneId.systemDefault())
             .toInstant()
             .toEpochMilli()
@@ -42,10 +41,12 @@ class ReminderScheduler @Inject constructor(
         val now = System.currentTimeMillis()
         if (triggerMillis <= now) return
 
-        when (reminder.notificationMode) {
-            NotificationMode.ALARM -> scheduleAlarm(reminder, triggerMillis)
-            NotificationMode.NOTIFICATION -> scheduleWork(reminder, triggerMillis - now)
-        }
+        // Older builds delivered NOTIFICATION-mode reminders through WorkManager, which is not
+        // exact (Doze can delay it by a long time). Drop any such leftover job so the reminder
+        // doesn't fire twice now that both modes use exact AlarmManager alarms.
+        WorkManager.getInstance(context).cancelUniqueWork("reminder_${reminder.id}")
+
+        scheduleAlarmBroadcast(reminder, triggerMillis)
     }
 
     fun cancel(reminderId: Long) {
@@ -72,14 +73,35 @@ class ReminderScheduler @Inject constructor(
 
     suspend fun rescheduleRecurring(reminder: Reminder) {
         if (reminder.recurrenceType == RecurrenceType.NONE) return
-        val next = nextOccurrence(reminder) ?: return
+        // Completing/dismissing a *snoozed* occurrence: the regular series may already have been
+        // advanced, so continue it rather than stepping forward again (which would skip a day).
+        if (reminder.snoozedUntil != null) return resumeSeries(reminder)
+        val next = nextOccurrence(reminder, LocalDateTime.now()) ?: return
         // Persist the advanced date/status - without this, every future reschedule keeps reading
         // the ORIGINAL reminderDateTime back out of the DB, so the 2nd+ occurrence computes a
         // next-time that's already in the past and schedule() silently drops it (recurring
         // reminders would stop firing after their 2nd occurrence).
-        val updated = reminder.copy(reminderDateTime = next, status = ReminderStatus.ACTIVE)
+        val updated = reminder.copy(reminderDateTime = next, status = ReminderStatus.ACTIVE, snoozedUntil = null)
         repository.updateReminder(updated)
         schedule(updated)
+    }
+
+    /**
+     * A recurring reminder rang (normally or after a snooze) and has been handled. Drop any
+     * snooze and continue the regular series: if the regular occurrence is still ahead (it was
+     * already advanced elsewhere) just schedule it, otherwise advance from the regular time -
+     * never from the snoozed time, so 8:00 snoozed to 8:10 still repeats at 8:00. Safe to call
+     * more than once for the same ring without skipping an occurrence.
+     */
+    suspend fun resumeSeries(reminder: Reminder) {
+        if (reminder.recurrenceType == RecurrenceType.NONE) return
+        val cleared = reminder.copy(snoozedUntil = null, status = ReminderStatus.ACTIVE)
+        if (cleared.reminderDateTime.isAfter(LocalDateTime.now())) {
+            repository.updateReminder(cleared)
+            schedule(cleared)
+        } else {
+            rescheduleRecurring(cleared)
+        }
     }
 
     /** Whether the app can currently schedule exact alarms (always true below API 31). */
@@ -94,22 +116,25 @@ class ReminderScheduler @Inject constructor(
     /** Re-fires the alarm/notification for [reminderId] at [newDateTime]. */
     suspend fun snooze(reminderId: Long, newDateTime: LocalDateTime) {
         val reminder = repository.getReminderById(reminderId) ?: return
-        val updatedReminder = reminder.copy(
-            reminderDateTime = newDateTime,
-            status = ReminderStatus.ACTIVE
-        )
+        val updatedReminder = if (reminder.recurrenceType == RecurrenceType.NONE) {
+            // One-time: the snoozed time simply becomes the reminder's time.
+            reminder.copy(reminderDateTime = newDateTime, snoozedUntil = null, status = ReminderStatus.ACTIVE)
+        } else {
+            // Recurring: keep the regular time (reminderDateTime) untouched and remember the
+            // snooze separately, so the series doesn't drift by the snooze amount.
+            reminder.copy(snoozedUntil = newDateTime, status = ReminderStatus.ACTIVE)
+        }
         repository.updateReminder(updatedReminder)
         schedule(updatedReminder)
     }
 
-    private fun scheduleAlarm(reminder: Reminder, triggerMillis: Long) =
-        scheduleAlarmBroadcast(reminder.id, reminder.title, reminder.description, triggerMillis)
-
-    private fun scheduleAlarmBroadcast(reminderId: Long, title: String, description: String, triggerMillis: Long) {
+    private fun scheduleAlarmBroadcast(reminder: Reminder, triggerMillis: Long) {
+        val reminderId = reminder.id
         val intent = Intent(context, AlarmReceiver::class.java).apply {
             putExtra(EXTRA_REMINDER_ID, reminderId)
-            putExtra(EXTRA_REMINDER_TITLE, title)
-            putExtra(EXTRA_REMINDER_DESCRIPTION, description)
+            putExtra(EXTRA_REMINDER_TITLE, reminder.title)
+            putExtra(EXTRA_REMINDER_DESCRIPTION, reminder.description)
+            putExtra(EXTRA_NOTIFICATION_MODE, reminder.notificationMode.name)
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -127,15 +152,18 @@ class ReminderScheduler @Inject constructor(
         )
 
         try {
-            if (hasExactAlarmPermission()) {
+            if (!hasExactAlarmPermission()) {
+                // Exact alarms were not granted (Android 12+ requires explicit user consent).
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pendingIntent)
+            } else if (reminder.notificationMode == NotificationMode.NOTIFICATION) {
+                // Exact and Doze-proof, without the status-bar alarm icon setAlarmClock() shows.
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pendingIntent)
+            } else {
                 // setAlarmClock() is used instead of setExactAndAllowWhileIdle(): it is exempt
                 // from Doze/App Standby *and* from aggressive OEM battery managers (e.g. OnePlus
                 // OxygenOS "deep optimization"), which were silently delaying or dropping alarms
                 // fired while the app was in the background.
                 alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(triggerMillis, showIntent), pendingIntent)
-            } else {
-                // Exact alarms were not granted (Android 12+ requires explicit user consent).
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMillis, pendingIntent)
             }
         } catch (e: SecurityException) {
             // Fallback to inexact alarm if exact permission denied
@@ -143,34 +171,30 @@ class ReminderScheduler @Inject constructor(
         }
     }
 
-    private fun scheduleWork(reminder: Reminder, delayMillis: Long) {
-        val data = workDataOf(
-            EXTRA_REMINDER_ID to reminder.id,
-            EXTRA_REMINDER_TITLE to reminder.title,
-            EXTRA_REMINDER_DESCRIPTION to reminder.description
-        )
-        val request = OneTimeWorkRequestBuilder<ReminderNotificationWorker>()
-            .setInitialDelay(delayMillis, TimeUnit.MILLISECONDS)
-            .setInputData(data)
-            .addTag("reminder")
-            .addTag("reminder_${reminder.id}")
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            "reminder_${reminder.id}",
-            ExistingWorkPolicy.REPLACE,
-            request
-        )
+    /**
+     * The first occurrence strictly after [now]. Steps forward repeatedly so a recurring reminder
+     * that was due while the phone was off (or the app was killed) catches up instead of
+     * computing a time that's already past and silently never firing again.
+     */
+    private fun nextOccurrence(reminder: Reminder, now: LocalDateTime): LocalDateTime? {
+        if (reminder.recurrenceType == RecurrenceType.NONE) return null
+        val weekDays = WeekDays.parse(reminder.recurrenceValue)
+        var next = step(reminder, weekDays, reminder.reminderDateTime)
+        var guard = 0
+        while (!next.isAfter(now) && guard++ < 10_000) next = step(reminder, weekDays, next)
+        return next
     }
 
-    private fun nextOccurrence(reminder: Reminder): LocalDateTime? {
-        val base = reminder.reminderDateTime
-        return when (reminder.recurrenceType) {
-            RecurrenceType.DAILY -> base.plusDays(1)
-            RecurrenceType.WEEKLY -> base.plusWeeks(1)
-            RecurrenceType.MONTHLY -> base.plusMonths(1)
-            RecurrenceType.YEARLY -> base.plusYears(1)
-            RecurrenceType.NONE -> null
+    private fun step(reminder: Reminder, weekDays: Set<java.time.DayOfWeek>, from: LocalDateTime): LocalDateTime =
+        when (reminder.recurrenceType) {
+            RecurrenceType.DAILY -> from.plusDays(1)
+            // Multi-day weekly ("MONDAY,WEDNESDAY") steps to the next selected day; a single day
+            // or an empty value (older reminders) is the plain once-a-week case.
+            RecurrenceType.WEEKLY ->
+                if (weekDays.size <= 1) from.plusWeeks(1)
+                else WeekDays.firstOccurrence(from.plusDays(1), weekDays, from)
+            RecurrenceType.MONTHLY -> from.plusMonths(1)
+            RecurrenceType.YEARLY -> from.plusYears(1)
+            RecurrenceType.NONE -> from
         }
-    }
 }

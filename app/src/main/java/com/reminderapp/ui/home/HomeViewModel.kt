@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.reminderapp.data.repository.ReminderRepository
 import com.reminderapp.domain.model.Reminder
+import com.reminderapp.domain.model.RecurrenceType
 import com.reminderapp.domain.model.ReminderStatus
 import com.reminderapp.scheduler.ReminderScheduler
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -64,7 +65,13 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val overdue = repository.getOverdueReminders(LocalDateTime.now())
             overdue.forEach { reminder ->
-                repository.updateStatus(reminder.id, ReminderStatus.MISSED)
+                if (reminder.recurrenceType == RecurrenceType.NONE) {
+                    repository.updateStatus(reminder.id, ReminderStatus.MISSED)
+                } else {
+                    // Marking a recurring reminder MISSED would end the whole series (only
+                    // ACTIVE reminders get rescheduled). Move it on to its next occurrence.
+                    scheduler.rescheduleRecurring(reminder)
+                }
             }
         }
     }

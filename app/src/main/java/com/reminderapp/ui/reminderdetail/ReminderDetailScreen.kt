@@ -178,7 +178,9 @@ fun ReminderDetailScreen(
                     value = when (r.recurrenceType) {
                         RecurrenceType.NONE -> "One-time"
                         RecurrenceType.DAILY -> "Every day"
-                        RecurrenceType.WEEKLY -> "Every week (${r.recurrenceValue.lowercase().replaceFirstChar { it.uppercase() }})"
+                        RecurrenceType.WEEKLY -> com.reminderapp.domain.model.WeekDays
+                            .parse(r.recurrenceValue)
+                            .let { if (it.isEmpty()) "Every week" else com.reminderapp.domain.model.WeekDays.label(it) }
                         RecurrenceType.MONTHLY -> "Every month on ${r.recurrenceValue}${ordinalSuffix(r.recurrenceValue.toIntOrNull() ?: 1)}"
                         RecurrenceType.YEARLY -> "Every year on ${r.recurrenceValue.replace("_", " ")}"
                     }

@@ -48,3 +48,31 @@ val AppPrimaryDark = Color(0xFFA0D0E8)
 val AppOnPrimaryDark = Color(0xFF003548)
 val AppPrimaryContainerDark = Color(0xFF004C69)
 val AppOnPrimaryContainerDark = Color(0xFFD0E6F2)
+
+val AppAccentAIDark = Color(0xFFCBBEFF)
+val AppOnAccentAIDark = Color(0xFF33256B)
+val AppAccentAIContainerDark = Color(0xFF4A3B86)
+val AppOnAccentAIContainerDark = Color(0xFFE8E0FF)
+
+val AppMissedDark = Color(0xFFFFB4AB)
+val AppOnMissedDark = Color(0xFF5F1412)
+val AppMissedContainerDark = Color(0xFF7A2A26)
+val AppOnMissedContainerDark = Color(0xFFFFDAD5)
+
+val AppCompletedDark = Color(0xFF9DD4B1)
+
+// ─── Surface containers (sheets, chips, input fields, cards) ─────────────────
+// Material 3 components read these; left unset they fall back to the baseline purple tones.
+val AppSurfaceContainerLowest = Color(0xFFFFFFFF)
+val AppSurfaceContainerLow = Color(0xFFFBFAF6)
+val AppSurfaceContainer = Color(0xFFF3F2ED)
+val AppSurfaceContainerHigh = Color(0xFFEDECE6)
+val AppSurfaceContainerHighest = Color(0xFFE6E5DF)
+val AppSurfaceVariant = Color(0xFFEEEDE7)
+
+val AppSurfaceContainerLowestDark = Color(0xFF0E0F10)
+val AppSurfaceContainerLowDark = Color(0xFF1A1B1C)
+val AppSurfaceContainerDark = Color(0xFF1F2122)
+val AppSurfaceContainerHighDark = Color(0xFF292B2D)
+val AppSurfaceContainerHighestDark = Color(0xFF343638)
+val AppSurfaceVariantDark = Color(0xFF2C2F31)

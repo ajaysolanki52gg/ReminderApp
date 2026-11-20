@@ -70,7 +70,7 @@ class AlarmActivity : ComponentActivity() {
                             CoroutineScope(Dispatchers.IO).launch {
                                 repository.updateStatus(reminderId, ReminderStatus.MISSED)
                                 val reminder = repository.getReminderById(reminderId)
-                                reminder?.let { scheduler.rescheduleRecurring(it) }
+                                reminder?.let { scheduler.resumeSeries(it) }
                             }
                         }
                         notificationHelper.cancelNotification(reminderId)
@@ -82,7 +82,7 @@ class AlarmActivity : ComponentActivity() {
                             CoroutineScope(Dispatchers.IO).launch {
                                 repository.updateStatus(reminderId, ReminderStatus.COMPLETED)
                                 val reminder = repository.getReminderById(reminderId)
-                                reminder?.let { scheduler.rescheduleRecurring(it) }
+                                reminder?.let { scheduler.resumeSeries(it) }
                             }
                         }
                         notificationHelper.cancelNotification(reminderId)

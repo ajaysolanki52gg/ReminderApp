@@ -1,5 +1,7 @@
 package com.reminderapp.ui.home
 
+import com.reminderapp.ui.theme.StatusColors
+
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -22,6 +24,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reminderapp.domain.model.Reminder
 import com.reminderapp.ui.components.AssistantInputBar
+import com.reminderapp.ui.components.VoiceAssistantOverlay
 import com.reminderapp.ui.components.ReminderCard
 import com.reminderapp.ui.components.SectionHeader
 import com.reminderapp.ui.components.SnoozeSelector
@@ -38,7 +41,7 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showAssistantBar by remember { mutableStateOf(false) }
-    var openWithVoice by remember { mutableStateOf(false) }
+    var showVoiceOverlay by remember { mutableStateOf(false) }
     var showActionMenu by remember { mutableStateOf(false) }
     var snoozeReminder by remember { mutableStateOf<Reminder?>(null) }
 
@@ -46,7 +49,7 @@ fun HomeScreen(
         containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
             AnimatedVisibility(
-                visible = !showAssistantBar,
+                visible = !showAssistantBar && !showVoiceOverlay,
                 enter = fadeIn() + scaleIn(),
                 exit = fadeOut() + scaleOut()
             ) {
@@ -79,7 +82,10 @@ fun HomeScreen(
                         .fillMaxSize()
                         .padding(horizontal = 20.dp)
                 ) {
-                    HomeHeader(onSettingsClick = onNavigateToSettings)
+                    HomeHeader(
+                        upcomingCount = uiState.upcomingReminders.size,
+                        onSettingsClick = onNavigateToSettings
+                    )
                     
                     Column(
                         modifier = Modifier
@@ -136,13 +142,11 @@ fun HomeScreen(
                         showActionMenu = false
                     },
                     onCreateAI = {
-                        openWithVoice = false
                         showAssistantBar = true
                         showActionMenu = false
                     },
                     onCreateVoice = {
-                        openWithVoice = true
-                        showAssistantBar = true
+                        showVoiceOverlay = true
                         showActionMenu = false
                     }
                 )
@@ -156,8 +160,14 @@ fun HomeScreen(
             ) {
                 AssistantInputBar(
                     onDismiss = { showAssistantBar = false },
-                    onNavigateToAddReminder = onNavigateToAddReminder,
-                    initialListening = openWithVoice
+                    onNavigateToAddReminder = onNavigateToAddReminder
+                )
+            }
+
+            if (showVoiceOverlay) {
+                VoiceAssistantOverlay(
+                    onDismiss = { showVoiceOverlay = false },
+                    onNavigateToAddReminder = onNavigateToAddReminder
                 )
             }
             
@@ -185,7 +195,8 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeHeader(onSettingsClick: () -> Unit) {
+private fun HomeHeader(upcomingCount: Int, onSettingsClick: () -> Unit) {
+    val today = remember { java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM")) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -205,7 +216,7 @@ private fun HomeHeader(onSettingsClick: () -> Unit) {
                 onClick = onSettingsClick,
                 modifier = Modifier
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             ) {
                 Icon(
                     Icons.Default.Settings,
@@ -215,7 +226,11 @@ private fun HomeHeader(onSettingsClick: () -> Unit) {
             }
         }
         Text(
-            text = "Stay on top of what's important",
+            text = when (upcomingCount) {
+                0 -> "$today · all clear"
+                1 -> "$today · 1 upcoming"
+                else -> "$today · $upcomingCount upcoming"
+            },
             style = MaterialTheme.typography.bodySmall.copy(
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -259,6 +274,9 @@ private fun ReminderSection(
                     modifier = Modifier.padding(bottom = 12.dp)
                 ) {
                     reminders.forEach { reminder ->
+                        // key(): without it the swipe state belongs to the list *position*, so
+                        // after one card is swiped away the next card inherits "dismissed".
+                        key(reminder.id) {
                         SwipeableReminderItem(
                             reminder = reminder,
                             onTap = { onNavigateToDetail(reminder.id) },
@@ -267,6 +285,7 @@ private fun ReminderSection(
                             onEdit = if (onEdit != null) { { onEdit(reminder.id) } } else null,
                             onSnooze = if (onSnooze != null) { { onSnooze(reminder) } } else null
                         )
+                        }
                     }
                 }
             }
@@ -292,12 +311,10 @@ private fun SwipeableReminderItem(
                     false
                 }
                 SwipeToDismissBoxValue.EndToStart -> {
-                    if (onMarkComplete != null) {
-                        onMarkComplete()
-                        true
-                    } else {
-                        false
-                    }
+                    // Return false so the card snaps back; the list update moves it to
+                    // Completed (or, for a recurring reminder, to its next occurrence).
+                    onMarkComplete?.invoke()
+                    false
                 }
                 else -> false
             }
@@ -309,7 +326,7 @@ private fun SwipeableReminderItem(
         backgroundContent = {
             val color = when (dismissState.dismissDirection) {
                 SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primary
-                SwipeToDismissBoxValue.EndToStart -> Color(0xFF3F7656) // AppCompleted
+                SwipeToDismissBoxValue.EndToStart -> StatusColors.completed
                 else -> Color.Transparent
             }
             Box(
@@ -409,27 +426,32 @@ private fun ActionSelectionMenu(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "What would you like to do?",
+                text = "New reminder",
                 style = MaterialTheme.typography.headlineMedium,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
 
             ActionMenuItem(
-                icon = Icons.Default.Add,
-                title = "Create reminder",
-                onClick = onCreateManual
+                icon = Icons.Default.Mic,
+                title = "Say it",
+                subtitle = "“Kal subah 9 baje doctor ko call karna”",
+                onClick = onCreateVoice,
+                iconColor = MaterialTheme.colorScheme.onPrimary,
+                iconBackground = MaterialTheme.colorScheme.primary
             )
             ActionMenuItem(
                 icon = Icons.Default.AutoAwesome,
-                title = "Create with AI",
+                title = "Type it",
+                subtitle = "“Pay rent every month on 1st”",
                 onClick = onCreateAI,
-                iconColor = MaterialTheme.colorScheme.secondary
+                iconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                iconBackground = MaterialTheme.colorScheme.secondaryContainer
             )
             ActionMenuItem(
-                icon = Icons.Default.Mic,
-                title = "Create by voice",
-                onClick = onCreateVoice,
-                iconColor = MaterialTheme.colorScheme.primary
+                icon = Icons.Default.EditCalendar,
+                title = "Fill in a form",
+                subtitle = "Pick the date and time yourself",
+                onClick = onCreateManual
             )
         }
     }
@@ -439,31 +461,43 @@ private fun ActionSelectionMenu(
 private fun ActionMenuItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
+    subtitle: String,
     onClick: () -> Unit,
-    iconColor: Color = MaterialTheme.colorScheme.onSurface
+    iconColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    iconBackground: Color = MaterialTheme.colorScheme.surfaceContainerHighest
 ) {
     Surface(
         onClick = onClick,
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier
-                .padding(16.dp),
+            modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = iconColor,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(Modifier.width(16.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
-            )
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(iconBackground),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(22.dp))
+            }
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

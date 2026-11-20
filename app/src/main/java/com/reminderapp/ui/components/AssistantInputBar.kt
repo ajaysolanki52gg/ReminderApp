@@ -1,11 +1,19 @@
 package com.reminderapp.ui.components
 
 import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -16,6 +24,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -25,12 +34,12 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.reminderapp.domain.model.Reminder
 import com.reminderapp.domain.model.RecurrenceType
+import com.reminderapp.domain.model.recurrenceLabel
 import com.reminderapp.ui.addreminder.AddReminderViewModel
 import java.time.format.DateTimeFormatter
 
@@ -39,38 +48,52 @@ import java.time.format.DateTimeFormatter
 fun AssistantInputBar(
     onDismiss: () -> Unit,
     onNavigateToAddReminder: () -> Unit,
-    initialListening: Boolean = false,
     viewModel: AddReminderViewModel = hiltViewModel()
 ) {
     var inputText by remember { mutableStateOf("") }
     var parsedReminder by remember { mutableStateOf<Reminder?>(null) }
     var parseConfidence by remember { mutableFloatStateOf(1f) }
+    var permissionDenied by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val context = LocalContext.current
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) viewModel.startVoiceInput()
+        if (granted) {
+            permissionDenied = false
+            keyboardController?.hide()
+            viewModel.startVoiceInput()
+        } else {
+            permissionDenied = true
+        }
     }
 
-    LaunchedEffect(initialListening) {
-        if (initialListening) {
+    fun requestOrStartMic() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            permissionDenied = false
+            keyboardController?.hide()
+            viewModel.startVoiceInput()
+        } else {
             micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
     val speechState by viewModel.speechState.collectAsState()
     val isListening by viewModel.isListening.collectAsState()
+    val readyForSpeech by viewModel.readyForSpeech.collectAsState()
     val audioLevel by viewModel.audioLevel.collectAsState()
 
     DisposableEffect(Unit) {
-        onDispose { viewModel.stopVoiceInput() }
+        onDispose { viewModel.cancelVoiceInput() }
     }
 
     val submit: () -> Unit = {
         if (inputText.isNotBlank()) {
-            viewModel.stopVoiceInput()
+            viewModel.cancelVoiceInput()
             val result = viewModel.parseInput(inputText)
             parsedReminder = viewModel.buildReminderFromParse(result)
             parseConfidence = result.confidence
@@ -85,6 +108,12 @@ fun AssistantInputBar(
             }
             is com.reminderapp.speech.SpeechState.Result -> {
                 inputText = state.text
+                if (state.text.isNotBlank() && parsedReminder == null) {
+                    val result = viewModel.parseInput(state.text)
+                    parsedReminder = viewModel.buildReminderFromParse(result)
+                    parseConfidence = result.confidence
+                    viewModel.resetSpeechState()
+                }
             }
             else -> {}
         }
@@ -93,6 +122,12 @@ fun AssistantInputBar(
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
     }
+
+    val parsePreview = remember(inputText) {
+        if (inputText.isBlank()) null else viewModel.parseInput(inputText)
+    }
+    val previewFormatter = remember { DateTimeFormatter.ofPattern("EEE, MMM d · h:mm a") }
+    val examplePhrases = listOf("in 10 minutes", "kal subah 9 baje", "tomorrow 5pm", "every Monday 8am")
 
     Surface(
         modifier = Modifier
@@ -131,9 +166,30 @@ fun AssistantInputBar(
                             VoiceLevelIndicator(level = audioLevel)
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = "Listening…",
+                                text = if (readyForSpeech) "Speak now" else "Starting microphone…",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        permissionDenied -> {
+                            Icon(
+                                Icons.Default.MicOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Microphone is off — tap to enable",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.clickable {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = Uri.fromParts("package", context.packageName, null)
+                                        }
+                                    )
+                                }
                             )
                         }
                         speechState is com.reminderapp.speech.SpeechState.Error -> {
@@ -152,14 +208,14 @@ fun AssistantInputBar(
                         }
                         else -> {
                             Icon(
-                                Icons.Default.AutoAwesome,
+                                Icons.Default.ShortText,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.secondary
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = "AI Assistant",
+                                text = "Natural language",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.secondary
                             )
@@ -190,7 +246,7 @@ fun AssistantInputBar(
                             },
                         placeholder = { 
                             Text(
-                                "Tell me what to remember...",
+                                "e.g. Call mom tomorrow at 5pm",
                                 style = MaterialTheme.typography.bodyLarge
                             ) 
                         },
@@ -210,13 +266,13 @@ fun AssistantInputBar(
                                     if (isListening) {
                                         viewModel.stopVoiceInput()
                                     } else {
-                                        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                        requestOrStartMic()
                                     }
                                 }
                             ) {
                                 Icon(
-                                    imageVector = if (isListening) Icons.Default.MicOff else Icons.Default.Mic,
-                                    contentDescription = if (isListening) "Voice input" else "Voice input",
+                                    imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
+                                    contentDescription = if (isListening) "Stop listening" else "Voice input",
                                     tint = if (isListening) MaterialTheme.colorScheme.error
                                     else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -232,6 +288,41 @@ fun AssistantInputBar(
                     ) {
                         Icon(Icons.Default.ArrowUpward, contentDescription = "Parse")
                     }
+                }
+
+                if (!isListening) {
+                    Row(
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        examplePhrases.forEach { phrase ->
+                            AssistChip(
+                                onClick = { inputText = phrase },
+                                label = { Text(phrase, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                }
+
+                parsePreview?.let { preview ->
+                    val whenText = preview.dateTime?.format(previewFormatter) ?: "time not found"
+                    val repeatText = if (preview.recurrenceType != RecurrenceType.NONE) {
+                        " · ${com.reminderapp.domain.model.recurrenceLabel(preview.recurrenceType, preview.recurrenceValue).lowercase()}"
+                    } else {
+                        ""
+                    }
+                    Text(
+                        text = "${preview.title.ifBlank { "Reminder" }} · $whenText$repeatText",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (preview.confidence < 0.8f) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.padding(top = 10.dp, end = 8.dp)
+                    )
                 }
             }
         }
@@ -285,8 +376,6 @@ fun ConfirmationSheet(
     onEdit: () -> Unit,
     onCancel: () -> Unit
 ) {
-    val dateFormatter = DateTimeFormatter.ofPattern("EEE, MMM dd")
-    val timeFormatter = DateTimeFormatter.ofPattern("hh:mm a")
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -295,7 +384,28 @@ fun ConfirmationSheet(
         shape = MaterialTheme.shapes.extraLarge,
         containerColor = MaterialTheme.colorScheme.surface
     ) {
-        Column(
+        ConfirmationContent(
+            reminder = reminder,
+            confidence = confidence,
+            onSave = onSave,
+            onEdit = onEdit,
+            onCancel = onCancel
+        )
+    }
+}
+
+@Composable
+fun ConfirmationContent(
+    reminder: Reminder,
+    confidence: Float = 1f,
+    onSave: () -> Unit,
+    onEdit: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val dateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM")
+    val timeFormatter = DateTimeFormatter.ofPattern("h:mm a")
+
+    Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
@@ -303,8 +413,8 @@ fun ConfirmationSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "Add Reminder?",
-                style = MaterialTheme.typography.headlineMedium
+                text = "Save this reminder?",
+                style = MaterialTheme.typography.headlineSmall
             )
 
             if (confidence < 0.8f) {
@@ -336,8 +446,8 @@ fun ConfirmationSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                        MaterialTheme.shapes.medium
+                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                        MaterialTheme.shapes.large
                     )
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -363,6 +473,23 @@ fun ConfirmationSheet(
                     )
                 }
 
+                if (reminder.notificationMode == com.reminderapp.domain.model.NotificationMode.ALARM) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Alarm,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Rings as an alarm",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 if (reminder.recurrenceType != RecurrenceType.NONE) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -373,7 +500,7 @@ fun ConfirmationSheet(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = reminder.recurrenceType.name.lowercase().replaceFirstChar { it.uppercase() },
+                            text = reminder.recurrenceLabel(),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -389,16 +516,15 @@ fun ConfirmationSheet(
                     onClick = onEdit,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Edit Details")
+                    Text("Edit details")
                 }
                 Button(
                     onClick = onSave,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Save Reminder")
+                    Text("Save")
                 }
             }
         }
-    }
 }

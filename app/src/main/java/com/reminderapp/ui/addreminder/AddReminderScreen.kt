@@ -1,5 +1,11 @@
 package com.reminderapp.ui.addreminder
 
+import com.reminderapp.domain.model.WeekDays
+import androidx.compose.foundation.shape.CircleShape
+import java.time.DayOfWeek
+import java.time.format.TextStyle
+import java.util.Locale
+
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -17,6 +23,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reminderapp.domain.model.NotificationMode
 import com.reminderapp.domain.model.ReminderType
+import com.reminderapp.domain.model.RecurrenceType
 import com.reminderapp.util.requestAlarmReliabilityPermissionsIfNeeded
 import java.time.LocalDate
 import java.time.LocalTime
@@ -187,6 +194,14 @@ fun AddReminderScreen(
                 onSelect = viewModel::updateReminderType
             )
 
+            if (uiState.recurrenceType == RecurrenceType.WEEKLY) {
+                WeekDayPicker(
+                    selected = WeekDays.parse(uiState.recurrenceValue),
+                    onToggle = viewModel::toggleWeekDay,
+                    onPreset = viewModel::setWeekDays
+                )
+            }
+
             // ─── Notification Mode ─────────────────────────────────────────────
             Text(
                 text = "Notification Mode",
@@ -319,6 +334,60 @@ private fun ReminderTypeSelector(
                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
                 )
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WeekDayPicker(
+    selected: Set<DayOfWeek>,
+    onToggle: (DayOfWeek) -> Unit,
+    onPreset: (Set<DayOfWeek>) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+            text = "Repeat on · ${WeekDays.label(selected)}",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        // Monday-first row of round toggles: M T W T F S S
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            DayOfWeek.values().forEach { day ->
+                val isOn = day in selected
+                Surface(
+                    onClick = { onToggle(day) },
+                    shape = CircleShape,
+                    color = if (isOn) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = day.getDisplayName(TextStyle.NARROW, Locale.getDefault()),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (isOn) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                "Weekdays" to WeekDays.WEEKDAYS,
+                "Weekends" to WeekDays.WEEKEND,
+                "Every day" to WeekDays.ALL
+            ).forEach { (label, days) ->
+                FilterChip(
+                    selected = selected == days,
+                    onClick = { onPreset(days) },
+                    label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                )
+            }
         }
     }
 }

@@ -44,8 +44,16 @@ data class Reminder(
     val notificationMode: NotificationMode = NotificationMode.NOTIFICATION,
     val status: ReminderStatus = ReminderStatus.ACTIVE,
     val createdAt: LocalDateTime = LocalDateTime.now(),
-    val updatedAt: LocalDateTime = LocalDateTime.now()
-)
+    val updatedAt: LocalDateTime = LocalDateTime.now(),
+    /**
+     * Set while a *recurring* reminder is snoozed. [reminderDateTime] keeps the regular
+     * occurrence (e.g. 8:00) so the series never drifts by the snooze amount.
+     */
+    val snoozedUntil: LocalDateTime? = null
+) {
+    /** When this reminder will actually ring next. */
+    val nextTriggerTime: LocalDateTime get() = snoozedUntil ?: reminderDateTime
+}
 
 // ─── Parser Result ─────────────────────────────────────────────────────────────
 

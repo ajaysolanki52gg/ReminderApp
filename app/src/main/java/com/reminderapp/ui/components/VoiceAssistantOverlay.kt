@@ -1,10 +1,18 @@
 package com.reminderapp.ui.components
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -15,149 +23,245 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.reminderapp.ui.addreminder.AddReminderViewModel
+import com.reminderapp.domain.model.Reminder
 import com.reminderapp.speech.SpeechState
+import com.reminderapp.ui.addreminder.AddReminderViewModel
 
-/**
- * 🎙️ Voice Assistant Overlay (Legacy / Standalone)
- * 
- * NOTE: This component is currently standalone. The main voice logic is in AssistantInputBar.
- * It has been fixed to avoid redundant listening triggers.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VoiceAssistantOverlay(
     onDismiss: () -> Unit,
-    onResult: (String) -> Unit,
+    onNavigateToAddReminder: () -> Unit,
     viewModel: AddReminderViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
     val speechState by viewModel.speechState.collectAsState()
     val isListening by viewModel.isListening.collectAsState()
-    
+    val readyForSpeech by viewModel.readyForSpeech.collectAsState()
+    val audioLevel by viewModel.audioLevel.collectAsState()
+
     var sessionText by remember { mutableStateOf("") }
+    var parsedReminder by remember { mutableStateOf<Reminder?>(null) }
+    var parseConfidence by remember { mutableFloatStateOf(1f) }
+    var permissionDenied by remember { mutableStateOf(false) }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) viewModel.startVoiceInput()
+        if (granted) {
+            permissionDenied = false
+            viewModel.startVoiceInput()
+        } else {
+            permissionDenied = true
+        }
+    }
+
+    fun requestOrStartMic() {
+        when {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED -> {
+                permissionDenied = false
+                viewModel.startVoiceInput()
+            }
+            else -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
     }
 
     LaunchedEffect(Unit) {
-        micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        requestOrStartMic()
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { viewModel.cancelVoiceInput() }
     }
 
     LaunchedEffect(speechState) {
         when (val state = speechState) {
-            is SpeechState.PartialResult -> {
-                sessionText = state.text
-            }
+            is SpeechState.PartialResult -> sessionText = state.text
             is SpeechState.Result -> {
                 sessionText = state.text
+                if (parsedReminder == null && state.text.isNotBlank()) {
+                    val result = viewModel.parseInput(state.text)
+                    parsedReminder = viewModel.buildReminderFromParse(result)
+                    parseConfidence = result.confidence
+                    viewModel.resetSpeechState()
+                }
             }
             else -> {}
         }
     }
 
+    val statusText = when {
+        permissionDenied -> "Microphone permission is off"
+        isListening && !readyForSpeech -> "Starting microphone…"
+        isListening && sessionText.isBlank() -> "Speak now"
+        isListening -> "Listening…"
+        speechState is SpeechState.Error -> (speechState as SpeechState.Error).message
+        sessionText.isNotBlank() -> "Is this right?"
+        else -> "Say what to remember, and when"
+    }
+
+    val confirmed = parsedReminder
+
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            viewModel.cancelVoiceInput()
+            onDismiss()
+        },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color.Transparent,
-        scrimColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.25f),
+        containerColor = MaterialTheme.colorScheme.surface,
         dragHandle = null
     ) {
-        Box(
+        if (confirmed != null) {
+            ConfirmationContent(
+                reminder = confirmed,
+                confidence = parseConfidence,
+                onSave = {
+                    viewModel.saveReminder(confirmed)
+                    onDismiss()
+                },
+                onEdit = {
+                    viewModel.stashForEdit(confirmed)
+                    onNavigateToAddReminder()
+                    onDismiss()
+                },
+                onCancel = { parsedReminder = null }
+            )
+        } else Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(topStart = 48.dp, topEnd = 48.dp))
-                .background(
-                    Brush.verticalGradient(colors = listOf(
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
-                        MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
-                    ))
-                )
-                .padding(bottom = 56.dp)
+                .padding(horizontal = 24.dp)
+                .padding(top = 16.dp, bottom = 40.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            GlowingBreatheBorder()
+            Box(
+                modifier = Modifier
+                    .size(40.dp, 4.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+            )
 
-            Column(
+            AssistantVisualizer(
+                isListening = isListening,
+                audioLevel = audioLevel
+            )
+
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
+                color = if (speechState is SpeechState.Error) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                }
+            )
+
+            Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(36.dp)
+                    .heightIn(min = 96.dp)
+                    .animateContentSize(),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp, 4.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.15f))
-                )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    if (sessionText.isBlank()) {
+                        Text(
+                            text = "Try saying",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "“Kal shaam 6 baje mummy ko call karna”\n“Remind me to pay rent every month on 1st”",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                        )
+                    } else {
+                        Text(
+                            text = sessionText,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
 
-                AssistantVisualizer(
-                    isListening = isListening
-                )
-
-                GradientTextCard(
-                    text = if (sessionText.isEmpty()) "How can I help?" else sessionText,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp)
-                )
-
+            if (permissionDenied) {
+                Button(
+                    onClick = {
+                        val activity = context.findActivity()
+                        val showRationale = activity != null &&
+                            ActivityCompat.shouldShowRequestPermissionRationale(
+                                activity,
+                                Manifest.permission.RECORD_AUDIO
+                            )
+                        if (showRationale) {
+                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        } else {
+                            context.openAppSettings()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text("Enable microphone")
+                }
+            } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     FilledTonalIconButton(
-                        onClick = { 
-                            viewModel.stopVoiceInput()
-                            viewModel.resetSpeechState()
-                            viewModel.startVoiceInput()
+                        onClick = {
+                            viewModel.cancelVoiceInput()
+                            sessionText = ""
+                            parsedReminder = null
+                            requestOrStartMic()
                         },
-                        modifier = Modifier.size(56.dp),
-                        shape = CircleShape,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-                        )
+                        modifier = Modifier.size(56.dp)
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Retry")
+                        Icon(Icons.Default.Refresh, contentDescription = "Try again")
                     }
 
                     Button(
                         onClick = {
-                            viewModel.stopVoiceInput()
-                            if (sessionText.isNotEmpty()) onResult(sessionText) else onDismiss()
+                            if (isListening) {
+                                viewModel.stopVoiceInput()
+                            } else {
+                                requestOrStartMic()
+                            }
                         },
                         modifier = Modifier.weight(1f).height(56.dp),
-                        shape = RoundedCornerShape(32.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = Color.White
-                        )
+                        shape = RoundedCornerShape(28.dp)
                     ) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                        Spacer(Modifier.width(14.dp))
-                        Text("Confirm", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Icon(
+                            imageVector = if (isListening) Icons.Default.Stop else Icons.Default.Mic,
+                            contentDescription = null
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (isListening) "Done" else "Listen")
                     }
 
                     FilledTonalIconButton(
                         onClick = {
-                            viewModel.stopVoiceInput()
+                            viewModel.cancelVoiceInput()
                             onDismiss()
                         },
-                        modifier = Modifier.size(56.dp),
-                        shape = CircleShape,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-                        )
+                        modifier = Modifier.size(56.dp)
                     ) {
                         Icon(Icons.Default.Close, contentDescription = "Cancel")
                     }
@@ -167,121 +271,88 @@ fun VoiceAssistantOverlay(
     }
 }
 
-@Composable
-fun GlowingBreatheBorder() {
-    val infiniteTransition = rememberInfiniteTransition(label = "breathe_border")
-    val xOffset by infiniteTransition.animateFloat(
-        initialValue = -100f,
-        targetValue = 100f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "x"
-    )
+private fun Context.findActivity(): Activity? {
+    var current: Context = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return null
+}
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(3.dp)
-            .background(
-                Brush.horizontalGradient(colors = listOf<Color>(
-                    Color.Transparent,
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f),
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                    Color.Transparent
-                ))
-            )
+private fun Context.openAppSettings() {
+    startActivity(
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", packageName, null)
+        }
     )
 }
 
 @Composable
-fun AssistantVisualizer(isListening: Boolean) {
+private fun AssistantVisualizer(
+    isListening: Boolean,
+    audioLevel: Float
+) {
+    val primary = MaterialTheme.colorScheme.primary
     val infiniteTransition = rememberInfiniteTransition(label = "assistant")
-    
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (isListening) 1.25f else 1f,
+    val breathe by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1400, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
+            animation = tween(1400, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
         ),
-        label = "scale"
+        label = "ring"
+    )
+    // Smooth the raw mic level so the rings don't jitter.
+    val level by animateFloatAsState(
+        targetValue = if (isListening) audioLevel else 0f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "level"
+    )
+    val coreScale by animateFloatAsState(
+        targetValue = if (isListening) 1f + level * 0.12f else 0.92f,
+        label = "core"
     )
 
-    Box(contentAlignment = Alignment.Center) {
+    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(148.dp)) {
         if (isListening) {
-            val secondary = MaterialTheme.colorScheme.secondary
-            val primary = MaterialTheme.colorScheme.primary
-            listOf(
-                secondary.copy(alpha = 0.2f),
-                primary.copy(alpha = 0.18f),
-                secondary.copy(alpha = 0.4f)
-            ).forEachIndexed { index, color ->
-                val rotation by infiniteTransition.animateFloat(
-                    initialValue = 0f,
-                    targetValue = 360f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(4500 + (index * 1000), easing = LinearEasing)
-                    ),
-                    label = "rotate"
-                )
-                
+            // Two expanding rings, offset in phase, plus a level-driven halo.
+            listOf(0f, 0.5f).forEach { offset ->
+                val phase = (breathe + offset) % 1f
                 Box(
                     modifier = Modifier
-                        .size(100.dp)
-                        .scale(scale * (1f - (index * 0.12f)))
-                        .blur(24.dp)
-                        .clip(CircleShape)
-                        .background(color)
+                        .size(84.dp)
+                        .scale(1f + phase * 0.7f)
+                        .alpha((1f - phase) * 0.35f)
+                        .border(2.dp, primary, CircleShape)
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(84.dp)
+                    .scale(1.1f + level * 0.45f)
+                    .clip(CircleShape)
+                    .background(primary.copy(alpha = 0.16f))
+            )
+        }
+        Surface(
+            modifier = Modifier
+                .size(84.dp)
+                .scale(coreScale),
+            shape = CircleShape,
+            color = if (isListening) primary else MaterialTheme.colorScheme.surfaceContainerHighest,
+            shadowElevation = if (isListening) 6.dp else 0.dp
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Default.Mic,
+                    contentDescription = null,
+                    tint = if (isListening) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(36.dp)
                 )
             }
         }
-
-        Box(
-            modifier = Modifier
-                .size(76.dp)
-                .clip(CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Surface(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
-                tonalElevation = 10.dp
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Mic,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(36.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun GradientTextCard(
-    text: String,
-    modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.onSurface
-) {
-    Card(
-        modifier = modifier.fillMaxWidth().padding(vertical = 16.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
-        )
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.headlineSmall.copy(
-                fontWeight = FontWeight.SemiBold
-            ),
-            color = color,
-            modifier = Modifier.padding(16.dp)
-        )
     }
 }

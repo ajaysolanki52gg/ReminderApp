@@ -25,7 +25,8 @@ data class ReminderEntity(
     val notificationMode: NotificationMode = NotificationMode.NOTIFICATION,
     val status: ReminderStatus = ReminderStatus.ACTIVE,
     val createdAt: LocalDateTime = LocalDateTime.now(),
-    val updatedAt: LocalDateTime = LocalDateTime.now()
+    val updatedAt: LocalDateTime = LocalDateTime.now(),
+    val snoozedUntil: LocalDateTime? = null
 )
 
 // ─── Mappers ──────────────────────────────────────────────────────────────────
@@ -41,7 +42,8 @@ fun ReminderEntity.toDomain() = com.reminderapp.domain.model.Reminder(
     notificationMode = notificationMode,
     status = status,
     createdAt = createdAt,
-    updatedAt = updatedAt
+    updatedAt = updatedAt,
+    snoozedUntil = snoozedUntil
 )
 
 fun com.reminderapp.domain.model.Reminder.toEntity() = ReminderEntity(
@@ -55,5 +57,6 @@ fun com.reminderapp.domain.model.Reminder.toEntity() = ReminderEntity(
     notificationMode = notificationMode,
     status = status,
     createdAt = createdAt,
-    updatedAt = updatedAt
+    updatedAt = updatedAt,
+    snoozedUntil = snoozedUntil
 )

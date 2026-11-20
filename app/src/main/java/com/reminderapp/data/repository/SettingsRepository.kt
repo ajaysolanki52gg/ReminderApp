@@ -18,7 +18,8 @@ private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(na
 
 data class AppSettings(
     val defaultNotificationMode: NotificationMode = NotificationMode.NOTIFICATION,
-    val defaultSnoozeDuration: Int = 10 // minutes
+    val defaultSnoozeDuration: Int = 10, // minutes
+    val speechLanguage: String = ""
 )
 
 @Singleton
@@ -27,13 +28,15 @@ class SettingsRepository @Inject constructor(
 ) {
     private val DEFAULT_MODE = stringPreferencesKey("default_notification_mode")
     private val DEFAULT_SNOOZE = intPreferencesKey("default_snooze_duration")
+    private val SPEECH_LANGUAGE = stringPreferencesKey("speech_language")
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
             defaultNotificationMode = NotificationMode.valueOf(
                 prefs[DEFAULT_MODE] ?: NotificationMode.NOTIFICATION.name
             ),
-            defaultSnoozeDuration = prefs[DEFAULT_SNOOZE] ?: 10
+            defaultSnoozeDuration = prefs[DEFAULT_SNOOZE] ?: 10,
+            speechLanguage = prefs[SPEECH_LANGUAGE] ?: ""
         )
     }
 
@@ -43,5 +46,9 @@ class SettingsRepository @Inject constructor(
 
     suspend fun setDefaultSnoozeDuration(minutes: Int) {
         context.dataStore.edit { it[DEFAULT_SNOOZE] = minutes }
+    }
+
+    suspend fun setSpeechLanguage(languageTag: String) {
+        context.dataStore.edit { it[SPEECH_LANGUAGE] = languageTag }
     }
 }

@@ -40,8 +40,8 @@ interface ReminderDao {
     @Query("""
         SELECT * FROM reminders 
         WHERE status = 'ACTIVE' 
-        AND reminderDateTime >= :now
-        ORDER BY reminderDateTime ASC
+        AND COALESCE(snoozedUntil, reminderDateTime) >= :now
+        ORDER BY COALESCE(snoozedUntil, reminderDateTime) ASC
         LIMIT :limit
     """)
     fun getUpcoming(now: LocalDateTime, limit: Int = 3): Flow<List<ReminderEntity>>
@@ -49,8 +49,8 @@ interface ReminderDao {
     @Query("""
         SELECT * FROM reminders 
         WHERE status = 'ACTIVE' 
-        AND reminderDateTime >= :now
-        ORDER BY reminderDateTime ASC
+        AND COALESCE(snoozedUntil, reminderDateTime) >= :now
+        ORDER BY COALESCE(snoozedUntil, reminderDateTime) ASC
     """)
     fun getAllUpcoming(now: LocalDateTime): Flow<List<ReminderEntity>>
 
@@ -76,7 +76,7 @@ interface ReminderDao {
 
     @Query("""
         SELECT * FROM reminders 
-        WHERE reminderDateTime < :now 
+        WHERE COALESCE(snoozedUntil, reminderDateTime) < :now 
         AND status = 'ACTIVE'
     """)
     suspend fun getOverdueReminders(now: LocalDateTime): List<ReminderEntity>

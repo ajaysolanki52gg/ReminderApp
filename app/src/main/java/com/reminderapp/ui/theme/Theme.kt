@@ -38,3 +38,9 @@ fun ReminderAppTheme(
         content = content
     )
 }
+
+/** Status colours that follow light/dark mode (Material's scheme has no "success" slot). */
+object StatusColors {
+    val completed: androidx.compose.ui.graphics.Color
+        @Composable get() = if (isSystemInDarkTheme()) AppCompletedDark else AppCompleted
+}

@@ -49,13 +49,20 @@ class AddReminderViewModel @Inject constructor(
 
     val speechState: StateFlow<SpeechState> = speechManager.state
     val isListening: StateFlow<Boolean> = speechManager.isListening
+    val readyForSpeech: StateFlow<Boolean> = speechManager.readyForSpeech
     val audioLevel: StateFlow<Float> = speechManager.audioLevel
+
+    private var speechLanguageTag: String = ""
+    private var voiceStartGeneration = 0
 
     init {
         viewModelScope.launch {
-            settingsRepository.settings.first().let { settings ->
-                _uiState.update { it.copy(notificationMode = settings.defaultNotificationMode) }
-            }
+            val settings = settingsRepository.settings.first()
+            speechLanguageTag = settings.speechLanguage
+            _uiState.update { it.copy(notificationMode = settings.defaultNotificationMode) }
+        }
+        viewModelScope.launch {
+            settingsRepository.settings.collect { speechLanguageTag = it.speechLanguage }
         }
         // Prefill from a reminder parsed on the Home screen's assistant bar, if the user tapped
         // "Edit" to bring it here rather than saving it directly.
@@ -101,7 +108,30 @@ class AddReminderViewModel @Inject constructor(
             ReminderType.MONTHLY -> RecurrenceType.MONTHLY
             ReminderType.YEARLY -> RecurrenceType.YEARLY
         }
-        _uiState.update { it.copy(reminderType = type, recurrenceType = recurrenceType) }
+        _uiState.update { state ->
+            val date = state.selectedDate
+            val value = when (type) {
+                ReminderType.ONE_TIME, ReminderType.DAILY -> ""
+                // Keep already-chosen days; otherwise start with the selected date's weekday.
+                ReminderType.WEEKLY -> state.recurrenceValue
+                    .takeIf { state.recurrenceType == RecurrenceType.WEEKLY && WeekDays.parse(it).isNotEmpty() }
+                    ?: date.dayOfWeek.name
+                ReminderType.MONTHLY -> date.dayOfMonth.toString()
+                ReminderType.YEARLY -> "${date.month.name}_${date.dayOfMonth}"
+            }
+            state.copy(reminderType = type, recurrenceType = recurrenceType, recurrenceValue = value)
+        }
+    }
+
+    /** Weekly reminders: turn one day on/off. At least one day always stays selected. */
+    fun toggleWeekDay(day: java.time.DayOfWeek) = _uiState.update { state ->
+        val current = WeekDays.parse(state.recurrenceValue)
+        val updated = if (day in current) current - day else current + day
+        if (updated.isEmpty()) state else state.copy(recurrenceValue = WeekDays.format(updated))
+    }
+
+    fun setWeekDays(days: Set<java.time.DayOfWeek>) = _uiState.update {
+        if (days.isEmpty()) it else it.copy(recurrenceValue = WeekDays.format(days))
     }
 
     // ─── NLP ──────────────────────────────────────────────────────────────────
@@ -136,19 +166,50 @@ class AddReminderViewModel @Inject constructor(
 
     // ─── Voice ────────────────────────────────────────────────────────────────
 
-    fun startVoiceInput() = speechManager.startListening()
-    fun stopVoiceInput() = speechManager.stopListening()
-    fun resetSpeechState() = speechManager.resetState()
+    fun startVoiceInput() {
+        val generation = ++voiceStartGeneration
+        viewModelScope.launch {
+            val tag = settingsRepository.settings.first().speechLanguage
+            if (generation != voiceStartGeneration) return@launch
+            speechLanguageTag = tag
+            speechManager.startListening(tag)
+        }
+    }
+
+    /** "Done": finish listening and deliver the final transcription as a result. */
+    fun stopVoiceInput() {
+        voiceStartGeneration++
+        speechManager.stopListening()
+    }
+
+    /** Abandon voice input without producing a result (sheet closed / screen left). */
+    fun cancelVoiceInput() {
+        voiceStartGeneration++
+        speechManager.resetState()
+    }
+
+    fun resetSpeechState() {
+        voiceStartGeneration++
+        speechManager.resetState()
+    }
 
     // ─── Save ─────────────────────────────────────────────────────────────────
 
     fun saveReminder(prefilled: Reminder? = null) {
         val state = _uiState.value
+        val chosenDateTime = LocalDateTime.of(state.selectedDate, state.selectedTime)
+        // Weekly on chosen days: start on the first selected day from the chosen date onwards
+        // (e.g. "Weekdays" picked on a Saturday starts on Monday).
+        val firstDateTime = if (state.recurrenceType == RecurrenceType.WEEKLY) {
+            WeekDays.firstOccurrence(chosenDateTime, WeekDays.parse(state.recurrenceValue), LocalDateTime.now())
+        } else {
+            chosenDateTime
+        }
         val reminder = prefilled ?: Reminder(
             id = state.editingReminderId ?: 0,
             title = state.title.trim(),
             description = state.description.trim(),
-            reminderDateTime = LocalDateTime.of(state.selectedDate, state.selectedTime),
+            reminderDateTime = firstDateTime,
             reminderType = state.reminderType,
             recurrenceType = state.recurrenceType,
             recurrenceValue = state.recurrenceValue,
@@ -187,6 +248,6 @@ class AddReminderViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        speechManager.stopListening()
+        cancelVoiceInput()
     }
 }
